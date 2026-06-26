@@ -1,14 +1,6 @@
 import { useQueries } from "@tanstack/react-query"
 import { Link } from "react-router-dom"
-import {
-  FolderKanban,
-  Loader2,
-  CheckCircle2,
-  CalendarClock,
-  PauseCircle,
-  ArrowRight,
-  Layers,
-} from "lucide-react"
+import { FolderKanban, Loader as Loader2, CircleCheck as CheckCircle2, CalendarClock, CirclePause as PauseCircle, ArrowRight, Layers } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
 
 import {
@@ -27,43 +19,52 @@ import { cn } from "@/lib/utils"
 import { useProjects, projectsKeys, getProject } from "@/api/projects"
 import type { ProjectDto, ProjectStatus } from "@/types/project"
 
-// Dashboard'da ko'rsatiladigan so'nggi loyihalar soni.
 const RECENT_LIMIT = 5
 
-// Har bir holat uchun statistika kartasining ko'rinishi.
-const STAT_CARDS: {
+interface StatCardConfig {
   status: ProjectStatus
   label: string
   icon: LucideIcon
   iconClassName: string
-}[] = [
+  glowColor: string
+  animation: string
+}
+
+const STAT_CARDS: StatCardConfig[] = [
   {
     status: "InProgress",
     label: "Jarayonda",
     icon: Loader2,
     iconClassName: "bg-info/10 text-info",
+    glowColor: "hover:shadow-[0_0_0_1.5px_hsl(200_80%_55%),0_4px_20px_hsl(200_80%_55%/0.25)]",
+    animation: "animate-spin-slow",
   },
   {
     status: "Completed",
     label: "Tugallangan",
     icon: CheckCircle2,
     iconClassName: "bg-success/10 text-success",
+    glowColor: "hover:shadow-[0_0_0_1.5px_hsl(142_55%_45%),0_4px_20px_hsl(142_55%_45%/0.25)]",
+    animation: "group-hover:animate-pulse-once",
   },
   {
     status: "Planned",
     label: "Rejalashtirilgan",
     icon: CalendarClock,
-    iconClassName: "bg-muted text-muted-foreground",
+    iconClassName: "bg-amber-500/10 text-amber-400",
+    glowColor: "hover:shadow-[0_0_0_1.5px_hsl(38_90%_55%),0_4px_20px_hsl(38_90%_55%/0.20)]",
+    animation: "group-hover:animate-tilt",
   },
   {
     status: "Suspended",
     label: "To'xtatilgan",
     icon: PauseCircle,
     iconClassName: "bg-warning/10 text-warning",
+    glowColor: "hover:shadow-[0_0_0_1.5px_hsl(38_90%_55%),0_4px_20px_hsl(38_90%_55%/0.20)]",
+    animation: "animate-pulse-subtle",
   },
 ]
 
-// Diagramma uchun har holatning ustun rangi.
 const BAR_COLORS: Record<ProjectStatus, string> = {
   InProgress: "bg-info",
   Completed: "bg-success",
@@ -78,7 +79,6 @@ const STATUS_LABELS: Record<ProjectStatus, string> = {
   Suspended: "To'xtatilgan",
 }
 
-// Sanani o'zbekcha qisqa formatda ko'rsatadi.
 function formatDate(value: string): string {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return "—"
@@ -91,10 +91,8 @@ function formatDate(value: string): string {
 
 export default function DashboardPage() {
   const { data, isLoading, isError, refetch } = useProjects()
-
   const projects: ProjectDto[] = data?.succeeded ? (data.result ?? []) : []
 
-  // Holat bo'yicha sonlar.
   const counts: Record<ProjectStatus, number> = {
     InProgress: 0,
     Completed: 0,
@@ -106,7 +104,6 @@ export default function DashboardPage() {
   }
   const total = projects.length
 
-  // So'nggi loyihalar — yaratilgan sana bo'yicha kamayuvchi tartibda.
   const recentProjects = projects
     .slice()
     .sort(
@@ -115,7 +112,6 @@ export default function DashboardPage() {
     )
     .slice(0, RECENT_LIMIT)
 
-  // Har bir so'nggi loyihaning bosqichlarini olib, progressni hisoblaymiz.
   const stageQueries = useQueries({
     queries: recentProjects.map((project) => ({
       queryKey: projectsKeys.detail(project.id),
@@ -131,7 +127,6 @@ export default function DashboardPage() {
       />
 
       {isLoading && <DashboardSkeleton />}
-
       {!isLoading && isError && (
         <ErrorState
           description="Ma'lumotlarni yuklashda xatolik yuz berdi."
@@ -141,16 +136,21 @@ export default function DashboardPage() {
 
       {!isLoading && !isError && (
         <>
-          {/* Statistika kartalari */}
+          {/* Stat cards */}
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
-            {/* Jami loyihalar */}
-            <Card>
+            {/* Total projects card */}
+            <Card
+              className={cn(
+                "group cursor-default transition-all duration-300",
+                "hover:-translate-y-1 hover:shadow-[0_0_0_1.5px_hsl(213_80%_56%),0_4px_24px_hsl(213_80%_56%/0.25)]"
+              )}
+            >
               <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
                 <CardDescription className="font-medium">
                   Jami loyihalar
                 </CardDescription>
                 <span className="flex h-9 w-9 items-center justify-center rounded-md bg-primary/10 text-primary">
-                  <FolderKanban className="h-5 w-5" />
+                  <FolderKanban className="h-5 w-5 transition-transform duration-300 group-hover:animate-bounce-once" />
                 </span>
               </CardHeader>
               <CardContent>
@@ -158,11 +158,19 @@ export default function DashboardPage() {
               </CardContent>
             </Card>
 
-            {/* Holat bo'yicha sonlar */}
             {STAT_CARDS.map((card) => {
               const Icon = card.icon
+              const isSpinning = card.status === "InProgress"
+              const isPulse = card.status === "Suspended"
               return (
-                <Card key={card.status}>
+                <Card
+                  key={card.status}
+                  className={cn(
+                    "group cursor-default transition-all duration-300",
+                    "hover:-translate-y-1",
+                    card.glowColor
+                  )}
+                >
                   <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
                     <CardDescription className="font-medium">
                       {card.label}
@@ -173,7 +181,17 @@ export default function DashboardPage() {
                         card.iconClassName
                       )}
                     >
-                      <Icon className="h-5 w-5" />
+                      <Icon
+                        className={cn(
+                          "h-5 w-5",
+                          isSpinning && "animate-spin-slow",
+                          isPulse && "animate-pulse-subtle",
+                          card.status === "Completed" &&
+                            "transition-transform duration-200 group-hover:scale-125",
+                          card.status === "Planned" &&
+                            "transition-transform duration-200 group-hover:rotate-12"
+                        )}
+                      />
                     </span>
                   </CardHeader>
                   <CardContent>
@@ -187,7 +205,7 @@ export default function DashboardPage() {
           </div>
 
           <div className="grid gap-6 lg:grid-cols-3">
-            {/* So'nggi loyihalar */}
+            {/* Recent projects */}
             <Card className="lg:col-span-2">
               <CardHeader>
                 <div className="flex items-center justify-between gap-3">
@@ -202,8 +220,7 @@ export default function DashboardPage() {
                     to="/projects"
                     className="flex shrink-0 items-center gap-1 text-sm font-medium text-primary hover:underline"
                   >
-                    Barchasi
-                    <ArrowRight className="h-4 w-4" />
+                    Barchasi <ArrowRight className="h-4 w-4" />
                   </Link>
                 </div>
               </CardHeader>
@@ -252,8 +269,6 @@ export default function DashboardPage() {
                                 className="shrink-0"
                               />
                             </div>
-
-                            {/* Bosqich progressi */}
                             <div className="space-y-1">
                               <div className="flex items-center justify-between text-xs text-muted-foreground">
                                 <span>Bosqich progressi</span>
@@ -279,13 +294,11 @@ export default function DashboardPage() {
               </CardContent>
             </Card>
 
-            {/* Holat bo'yicha taqsimot diagrammasi */}
+            {/* Status distribution */}
             <Card>
               <CardHeader>
                 <CardTitle>Holat bo'yicha taqsimot</CardTitle>
-                <CardDescription>
-                  Loyihalarning holat ulushi.
-                </CardDescription>
+                <CardDescription>Loyihalarning holat ulushi.</CardDescription>
               </CardHeader>
               <CardContent>
                 {total === 0 ? (
@@ -332,7 +345,6 @@ export default function DashboardPage() {
   )
 }
 
-// Dashboard yuklanish skeleti — yakuniy maketga mos.
 function DashboardSkeleton() {
   return (
     <div className="space-y-6">
@@ -349,7 +361,6 @@ function DashboardSkeleton() {
           </Card>
         ))}
       </div>
-
       <div className="grid gap-6 lg:grid-cols-3">
         <Card className="lg:col-span-2">
           <CardHeader>
@@ -367,7 +378,6 @@ function DashboardSkeleton() {
             ))}
           </CardContent>
         </Card>
-
         <Card>
           <CardHeader>
             <Skeleton className="h-5 w-36" />

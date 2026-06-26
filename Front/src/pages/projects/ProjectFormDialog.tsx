@@ -33,7 +33,6 @@ import {
 import type { ProjectDto, ProjectStatus } from "@/types/project"
 import { useCreateProject, useUpdateProject } from "@/api/projects"
 
-// Holat tanlovi uchun o'zbekcha matnlar.
 const STATUS_OPTIONS: { value: ProjectStatus; label: string }[] = [
   { value: "Planned", label: "Rejalashtirilgan" },
   { value: "InProgress", label: "Jarayonda" },
@@ -41,10 +40,12 @@ const STATUS_OPTIONS: { value: ProjectStatus; label: string }[] = [
   { value: "Suspended", label: "To'xtatilgan" },
 ]
 
-// Bitta sxema bilan ham yaratish, ham tahrirlashni qoplaymiz.
 const projectSchema = z.object({
   name: z.string().min(1, "Loyiha nomi kiritilishi shart"),
   description: z.string(),
+  code: z.string().min(1, "Loyiha kodi kiritilishi shart"),
+  client: z.string(),
+  deadline: z.string(),
   status: z.enum(["Planned", "InProgress", "Completed", "Suspended"]),
 })
 
@@ -53,8 +54,12 @@ type ProjectFormValues = z.infer<typeof projectSchema>
 interface ProjectFormDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  // null bo'lsa — yaratish rejimi, aks holda tahrirlash rejimi.
   project: ProjectDto | null
+}
+
+function toDateInput(value: string | null): string {
+  if (!value) return ""
+  return value.slice(0, 10)
 }
 
 export default function ProjectFormDialog({
@@ -72,30 +77,42 @@ export default function ProjectFormDialog({
     defaultValues: {
       name: "",
       description: "",
+      code: "",
+      client: "",
+      deadline: "",
       status: "Planned",
     },
   })
 
-  // Dialog ochilganda tanlangan loyihaga mos qiymatlarni yuklaymiz.
   useEffect(() => {
     if (!open) return
-
     if (project) {
       form.reset({
         name: project.name,
         description: project.description,
+        code: project.code,
+        client: project.client ?? "",
+        deadline: toDateInput(project.deadline),
         status: project.status,
       })
     } else {
       form.reset({
         name: "",
         description: "",
+        code: "",
+        client: "",
+        deadline: "",
         status: "Planned",
       })
     }
   }, [open, project, form])
 
   const onSubmit = (values: ProjectFormValues) => {
+    const deadline = values.deadline
+      ? new Date(values.deadline).toISOString()
+      : null
+    const client = values.client.trim() || null
+
     if (isEdit && project) {
       updateMutation.mutate(
         {
@@ -103,6 +120,9 @@ export default function ProjectFormDialog({
           body: {
             name: values.name,
             description: values.description,
+            code: values.code,
+            client,
+            deadline,
             status: values.status,
           },
         },
@@ -123,6 +143,9 @@ export default function ProjectFormDialog({
         {
           name: values.name,
           description: values.description,
+          code: values.code,
+          client,
+          deadline,
         },
         {
           onSuccess: (data) => {
@@ -141,7 +164,7 @@ export default function ProjectFormDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent className="max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>
             {isEdit ? "Loyihani tahrirlash" : "Yangi loyiha"}
@@ -152,9 +175,11 @@ export default function ProjectFormDialog({
               : "Yangi loyiha uchun ma'lumotlarni kiriting."}
           </DialogDescription>
         </DialogHeader>
-
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+          <form
+            onSubmit={form.handleSubmit(onSubmit)}
+            className="space-y-4"
+          >
             <FormField
               control={form.control}
               name="name"
@@ -171,14 +196,14 @@ export default function ProjectFormDialog({
 
             <FormField
               control={form.control}
-              name="description"
+              name="code"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Tavsif</FormLabel>
+                  <FormLabel>Loyiha kodi</FormLabel>
                   <FormControl>
-                    <Textarea
-                      placeholder="Loyiha haqida qisqacha"
-                      rows={4}
+                    <Input
+                      placeholder="MSA-001"
+                      className="font-mono"
                       {...field}
                     />
                   </FormControl>
@@ -187,7 +212,54 @@ export default function ProjectFormDialog({
               )}
             />
 
-            {/* Holat tanlovi faqat tahrirlash rejimida ko'rinadi. */}
+            <FormField
+              control={form.control}
+              name="description"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Tavsif</FormLabel>
+                  <FormControl>
+                    <Textarea
+                      placeholder="Loyiha haqida qisqacha"
+                      rows={3}
+                      {...field}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <FormField
+                control={form.control}
+                name="client"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Buyurtmachi</FormLabel>
+                    <FormControl>
+                      <Input placeholder="Buyurtmachi nomi" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="deadline"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Muddat</FormLabel>
+                    <FormControl>
+                      <Input type="date" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
+
             {isEdit && (
               <FormField
                 control={form.control}
@@ -197,7 +269,9 @@ export default function ProjectFormDialog({
                     <FormLabel>Holat</FormLabel>
                     <Select
                       value={field.value}
-                      onValueChange={field.onChange}
+                      onValueChange={(val) => {
+                        field.onChange(val)
+                      }}
                     >
                       <FormControl>
                         <SelectTrigger>
@@ -206,7 +280,10 @@ export default function ProjectFormDialog({
                       </FormControl>
                       <SelectContent>
                         {STATUS_OPTIONS.map((option) => (
-                          <SelectItem key={option.value} value={option.value}>
+                          <SelectItem
+                            key={option.value}
+                            value={option.value}
+                          >
                             {option.label}
                           </SelectItem>
                         ))}

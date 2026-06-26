@@ -1,5 +1,5 @@
-import { useState } from "react"
-import { UserPlus, X, Users as UsersIcon } from "lucide-react"
+import { useState, useCallback } from "react"
+import { UserPlus, X, Users as UsersIcon, Pin } from "lucide-react"
 import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
@@ -14,6 +14,12 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { cn } from "@/lib/utils"
 import type { Role } from "@/types/auth"
 import type { ProjectMemberDto } from "@/types/project"
@@ -26,7 +32,40 @@ interface ProjectMembersSidebarProps {
   projectId: string
 }
 
-// Telegram uslubidagi chap panel — loyihaga biriktirilgan a'zolar ro'yxati.
+function usePinnedMembers(projectId: string) {
+  const key = `pinned_members_${projectId}`
+
+  const getPinned = useCallback((): Set<string> => {
+    try {
+      const raw = localStorage.getItem(key)
+      if (!raw) return new Set()
+      return new Set(JSON.parse(raw) as string[])
+    } catch {
+      return new Set()
+    }
+  }, [key])
+
+  const [pinned, setPinnedState] = useState<Set<string>>(getPinned)
+
+  const togglePin = useCallback(
+    (userId: string) => {
+      setPinnedState((prev) => {
+        const next = new Set(prev)
+        if (next.has(userId)) {
+          next.delete(userId)
+        } else {
+          next.add(userId)
+        }
+        localStorage.setItem(key, JSON.stringify([...next]))
+        return next
+      })
+    },
+    [key]
+  )
+
+  return { pinned, togglePin }
+}
+
 export default function ProjectMembersSidebar({
   projectId,
 }: ProjectMembersSidebarProps) {
@@ -35,16 +74,22 @@ export default function ProjectMembersSidebar({
 
   const { data, isLoading } = useProjectMembers(projectId)
   const removeMutation = useRemoveProjectMember(projectId)
+  const { pinned, togglePin } = usePinnedMembers(projectId)
 
   const [assignOpen, setAssignOpen] = useState(false)
-  // O'chirish tasdig'i kutilayotgan a'zo.
   const [removing, setRemoving] = useState<ProjectMemberDto | null>(null)
 
   const members = data?.succeeded ? (data.result ?? []) : []
 
+  // Separate pinned vs normal, both sorted by name
+  const sorted = [...members].sort((a, b) =>
+    a.fullName.localeCompare(b.fullName)
+  )
+  const pinnedMembers = sorted.filter((m) => pinned.has(m.userId))
+  const regularMembers = sorted.filter((m) => !pinned.has(m.userId))
+
   const handleConfirmRemove = () => {
     if (!removing) return
-
     removeMutation.mutate(removing.userId, {
       onSuccess: (result) => {
         if (result.succeeded) {
@@ -58,9 +103,70 @@ export default function ProjectMembersSidebar({
     })
   }
 
+  const renderMember = (member: ProjectMemberDto) => {
+    const isPinned = pinned.has(member.userId)
+    return (
+      <DropdownMenu key={member.userId}>
+        <DropdownMenuTrigger asChild>
+          <div
+            className="group flex cursor-pointer items-center gap-3 rounded-md p-2 hover:bg-muted/60 focus-visible:outline-none"
+            tabIndex={0}
+          >
+            <MemberAvatar name={member.fullName} />
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-1.5">
+                <p className="truncate text-sm font-medium leading-tight">
+                  {member.fullName}
+                </p>
+                {isPinned && (
+                  <Pin className="h-3 w-3 shrink-0 rotate-45 text-primary" />
+                )}
+              </div>
+              <p className="truncate text-xs text-muted-foreground">
+                {ROLE_LABELS[member.role as Role]}
+              </p>
+            </div>
+            {isSuperAdmin && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className={cn(
+                  "h-7 w-7 text-muted-foreground opacity-0 transition-opacity",
+                  "group-hover:opacity-100 hover:text-destructive"
+                )}
+                aria-label="Loyihadan chiqarish"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setRemoving(member)
+                }}
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            )}
+          </div>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent side="right" align="start">
+          <DropdownMenuItem onClick={() => togglePin(member.userId)}>
+            <Pin className="h-4 w-4 rotate-45" />
+            {isPinned ? "Mahkamlashni bekor qilish" : "Mahkamlash"}
+          </DropdownMenuItem>
+          {isSuperAdmin && (
+            <DropdownMenuItem
+              className="text-destructive focus:text-destructive"
+              onClick={() => setRemoving(member)}
+            >
+              <X className="h-4 w-4" />
+              Loyihadan chiqarish
+            </DropdownMenuItem>
+          )}
+        </DropdownMenuContent>
+      </DropdownMenu>
+    )
+  }
+
   return (
     <div className="flex h-full flex-col border-r">
-      {/* Panel sarlavhasi: a'zolar soni + biriktirish tugmasi */}
+      {/* Header */}
       <div className="flex items-center justify-between gap-2 border-b px-3 py-2.5">
         <div className="flex items-center gap-2 text-sm font-medium">
           <UsersIcon className="h-4 w-4 text-muted-foreground" />
@@ -84,8 +190,8 @@ export default function ProjectMembersSidebar({
         )}
       </div>
 
-      {/* A'zolar ro'yxati */}
-      <div className="flex-1 space-y-0.5 overflow-y-auto p-2">
+      {/* Members list */}
+      <div className="flex-1 overflow-y-auto p-2">
         {isLoading &&
           Array.from({ length: 4 }).map((_, i) => (
             <div key={i} className="flex items-center gap-3 p-2">
@@ -113,40 +219,28 @@ export default function ProjectMembersSidebar({
           </div>
         )}
 
-        {!isLoading &&
-          members.map((member) => (
-            <div
-              key={member.userId}
-              className="group flex items-center gap-3 rounded-md p-2 hover:bg-muted/60"
-            >
-              <MemberAvatar name={member.fullName} />
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-medium leading-tight">
-                  {member.fullName}
-                </p>
-                <p className="truncate text-xs text-muted-foreground">
-                  {ROLE_LABELS[member.role as Role]}
-                </p>
-              </div>
-              {isSuperAdmin && (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className={cn(
-                    "h-7 w-7 text-muted-foreground opacity-0 transition-opacity",
-                    "group-hover:opacity-100 hover:text-destructive"
-                  )}
-                  aria-label="Loyihadan chiqarish"
-                  onClick={() => setRemoving(member)}
-                >
-                  <X className="h-4 w-4" />
-                </Button>
-              )}
-            </div>
-          ))}
+        {!isLoading && pinnedMembers.length > 0 && (
+          <div className="mb-1">
+            <p className="mb-0.5 flex items-center gap-1 px-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+              <Pin className="h-2.5 w-2.5 rotate-45" />
+              Mahkamlangan
+            </p>
+            {pinnedMembers.map(renderMember)}
+          </div>
+        )}
+
+        {!isLoading && regularMembers.length > 0 && (
+          <div>
+            {pinnedMembers.length > 0 && (
+              <p className="mb-0.5 px-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                A'zolar
+              </p>
+            )}
+            {regularMembers.map(renderMember)}
+          </div>
+        )}
       </div>
 
-      {/* Biriktirish dialogi (faqat SuperAdmin) */}
       {isSuperAdmin && (
         <AssignMemberDialog
           open={assignOpen}
@@ -156,7 +250,6 @@ export default function ProjectMembersSidebar({
         />
       )}
 
-      {/* Chiqarishni tasdiqlash */}
       <AlertDialog
         open={Boolean(removing)}
         onOpenChange={(open) => {

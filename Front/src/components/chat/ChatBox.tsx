@@ -1,11 +1,16 @@
 import { useEffect, useRef, useState } from "react"
 import type { UseMutationResult, UseQueryResult } from "@tanstack/react-query"
-import { MessagesSquare, Send } from "lucide-react"
+import { MessagesSquare, Send, Paperclip, Smile, X, FileText } from "lucide-react"
 import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import { Skeleton } from "@/components/ui/skeleton"
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover"
+import EmojiPicker from "@/components/chat/EmojiPicker"
 import EmptyState from "@/components/EmptyState"
 import ErrorState from "@/components/ErrorState"
 import { cn } from "@/lib/utils"
@@ -13,60 +18,94 @@ import { useAuthStore } from "@/store/authStore"
 import type { ApiResult } from "@/types/api"
 import type { ChatMessageDto } from "@/types/chat"
 
-// Global va loyiha chati uchun bitta qayta ishlatiladigan komponent.
-// Hook'lar prop orqali beriladi — qaysi API ishlatilishi tashqaridan belgilanadi.
 interface ChatBoxProps {
-  // Xabarlar ro'yxatini tortib oluvchi query hook (polling ichida).
   useMessages: () => UseQueryResult<ApiResult<ChatMessageDto[]>>
-  // Xabar yuboruvchi mutation hook (content -> ApiResult).
-  useSendMessage: () => UseMutationResult<
-    ApiResult<ChatMessageDto>,
-    unknown,
-    string
-  >
-  // Tashqi konteynerga moslash uchun qo'shimcha class (ixtiyoriy).
+  useSendMessage: () => UseMutationResult<ApiResult<ChatMessageDto>, unknown, string>
   className?: string
 }
 
-// Vaqtni o'zbekcha qisqa formatda (soat:daqiqa) ko'rsatadi.
 function formatTime(value: string): string {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return ""
-  return date.toLocaleTimeString("uz-UZ", {
-    hour: "2-digit",
-    minute: "2-digit",
-  })
+  return date.toLocaleTimeString("uz-UZ", { hour: "2-digit", minute: "2-digit" })
 }
 
-export default function ChatBox({
-  useMessages,
-  useSendMessage,
-  className,
-}: ChatBoxProps) {
-  const currentUserId = useAuthStore((s) => s.user?.id)
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
 
+// Group consecutive messages by the same sender so we can add "tail" only
+// on the last bubble in each group.
+interface MessageGroup {
+  senderId: string
+  senderName: string
+  isOwn: boolean
+  messages: ChatMessageDto[]
+}
+
+function groupMessages(messages: ChatMessageDto[], currentUserId: string | undefined): MessageGroup[] {
+  const groups: MessageGroup[] = []
+  for (const msg of messages) {
+    const isOwn = msg.senderId === currentUserId
+    const last = groups[groups.length - 1]
+    if (last && last.senderId === msg.senderId) {
+      last.messages.push(msg)
+    } else {
+      groups.push({ senderId: msg.senderId, senderName: msg.senderName, isOwn, messages: [msg] })
+    }
+  }
+  return groups
+}
+
+interface AttachedFile {
+  file: File
+  previewUrl: string | null
+}
+
+export default function ChatBox({ useMessages, useSendMessage, className }: ChatBoxProps) {
+  const currentUserId = useAuthStore((s) => s.user?.id)
   const { data, isLoading, isError, refetch } = useMessages()
   const sendMutation = useSendMessage()
 
   const [content, setContent] = useState("")
-  // Xabarlar oxiriga avtoskroll uchun nuqta.
+  const [attached, setAttached] = useState<AttachedFile | null>(null)
+  const [emojiOpen, setEmojiOpen] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const messages = data?.succeeded ? (data.result ?? []) : []
+  const groups = groupMessages(messages, currentUserId)
 
-  // Yangi xabar kelganda yoki yuborilganda pastga skroll qilamiz.
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [messages.length])
 
+  // Auto-grow textarea
+  useEffect(() => {
+    const el = textareaRef.current
+    if (!el) return
+    el.style.height = "auto"
+    el.style.height = `${Math.min(el.scrollHeight, 120)}px`
+  }, [content])
+
   const handleSend = () => {
     const trimmed = content.trim()
-    if (!trimmed || sendMutation.isPending) return
+    if ((!trimmed && !attached) || sendMutation.isPending) return
 
-    sendMutation.mutate(trimmed, {
+    const payload = attached
+      ? trimmed
+        ? `[Fayl: ${attached.file.name} (${formatFileSize(attached.file.size)})] ${trimmed}`
+        : `[Fayl: ${attached.file.name} (${formatFileSize(attached.file.size)})]`
+      : trimmed
+
+    sendMutation.mutate(payload, {
       onSuccess: (result) => {
         if (result.succeeded) {
           setContent("")
+          setAttached(null)
         } else {
           toast.error(result.errors[0] ?? "Xabar yuborishda xatolik")
         }
@@ -75,118 +114,229 @@ export default function ChatBox({
     })
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    handleSend()
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault()
+      handleSend()
+    }
   }
 
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const isImage = file.type.startsWith("image/")
+    const previewUrl = isImage ? URL.createObjectURL(file) : null
+    setAttached({ file, previewUrl })
+    e.target.value = ""
+  }
+
+  const handleEmojiSelect = (emoji: string) => {
+    const el = textareaRef.current
+    if (el) {
+      const start = el.selectionStart ?? content.length
+      const end = el.selectionEnd ?? content.length
+      const next = content.slice(0, start) + emoji + content.slice(end)
+      setContent(next)
+      requestAnimationFrame(() => {
+        el.focus()
+        el.setSelectionRange(start + emoji.length, start + emoji.length)
+      })
+    } else {
+      setContent((c) => c + emoji)
+    }
+    setEmojiOpen(false)
+  }
+
+  // Parse file attachment from message content
+  const parseMessage = (msg: string) => {
+    const fileMatch = msg.match(/^\[Fayl: (.+?) \((.+?)\)\]([\s\S]*)$/)
+    if (fileMatch) {
+      return { fileName: fileMatch[1], fileSize: fileMatch[2], text: fileMatch[3].trim() }
+    }
+    return null
+  }
+
+  const canSend = (content.trim() || attached) && !sendMutation.isPending
+
   return (
-    <div
-      className={cn(
-        "flex h-[28rem] flex-col rounded-md border bg-background",
-        className
-      )}
-    >
-      {/* Xabarlar ro'yxati */}
-      <div className="flex-1 space-y-3 overflow-y-auto p-4">
+    <div className={cn("flex flex-col bg-background", className)}>
+      {/* Messages area */}
+      <div className="flex-1 overflow-y-auto px-4 py-3 space-y-1">
         {isLoading && <ChatSkeleton />}
-
         {!isLoading && isError && (
-          <ErrorState
-            description="Xabarlarni yuklashda xatolik yuz berdi."
-            onRetry={() => refetch()}
-          />
+          <ErrorState description="Xabarlarni yuklashda xatolik yuz berdi." onRetry={() => refetch()} />
         )}
-
         {!isLoading && !isError && messages.length === 0 && (
-          <EmptyState
-            icon={MessagesSquare}
-            title="Hali xabarlar yo'q"
-            description="Birinchi bo'lib yozing."
-          />
+          <EmptyState icon={MessagesSquare} title="Hali xabarlar yo'q" description="Birinchi bo'lib yozing." />
         )}
 
-        {messages.map((message) => {
-          const isOwn = message.senderId === currentUserId
-          return (
-            <div
-              key={message.id}
-              className={cn("flex", isOwn ? "justify-end" : "justify-start")}
-            >
-              <div
-                className={cn(
-                  "max-w-[75%] rounded-lg px-3 py-2 text-sm",
-                  isOwn
-                    ? "bg-primary text-primary-foreground"
-                    : "bg-muted text-foreground"
-                )}
-              >
-                {/* O'z xabaringda ism takrorlanmasin */}
-                {!isOwn && (
-                  <p className="mb-0.5 text-xs font-medium opacity-80">
-                    {message.senderName}
-                  </p>
-                )}
-                <p className="whitespace-pre-wrap break-words">
-                  {message.content}
-                </p>
-                <p
+        {groups.map((group, gi) => (
+          <div key={`${group.senderId}-${gi}`} className={cn("flex flex-col gap-0.5", group.isOwn ? "items-end" : "items-start")}>
+            {!group.isOwn && (
+              <span className="ml-2 text-[11px] font-medium text-muted-foreground">{group.senderName}</span>
+            )}
+            {group.messages.map((message, mi) => {
+              const isLast = mi === group.messages.length - 1
+              const parsed = parseMessage(message.content)
+              return (
+                <div
+                  key={message.id}
                   className={cn(
-                    "mt-1 text-right text-[10px]",
-                    isOwn
-                      ? "text-primary-foreground/70"
-                      : "text-muted-foreground"
+                    "relative max-w-[70%] break-words",
+                    group.isOwn
+                      ? cn("rounded-[14px] rounded-br-[4px]", !isLast && "rounded-br-[14px]")
+                      : cn("rounded-[14px] rounded-bl-[4px]", !isLast && "rounded-bl-[14px]"),
+                    group.isOwn
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-muted text-foreground"
                   )}
+                  style={{ paddingTop: 7, paddingBottom: 7, paddingLeft: 12, paddingRight: 12 }}
                 >
-                  {formatTime(message.sentAt)}
-                </p>
-              </div>
-            </div>
-          )
-        })}
-
+                  {parsed ? (
+                    <div className="space-y-1.5">
+                      {/* File attachment card */}
+                      <div className={cn(
+                        "flex items-center gap-2 rounded-lg p-2",
+                        group.isOwn ? "bg-primary-foreground/10" : "bg-background/60"
+                      )}>
+                        <FileText className="h-6 w-6 shrink-0 opacity-70" />
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-medium leading-tight">{parsed.fileName}</p>
+                          <p className="text-xs opacity-60">{parsed.fileSize}</p>
+                        </div>
+                      </div>
+                      {parsed.text && <p className="whitespace-pre-wrap text-sm leading-snug">{parsed.text}</p>}
+                    </div>
+                  ) : (
+                    <p className="whitespace-pre-wrap text-sm leading-snug">{message.content}</p>
+                  )}
+                  {/* Time + padding so text doesn't overlap */}
+                  <span
+                    className={cn(
+                      "ml-3 mt-0.5 inline-block select-none whitespace-nowrap align-bottom text-[10px] leading-none",
+                      group.isOwn ? "text-primary-foreground/60" : "text-muted-foreground",
+                      "float-right"
+                    )}
+                  >
+                    {formatTime(message.sentAt)}
+                  </span>
+                </div>
+              )
+            })}
+          </div>
+        ))}
         <div ref={bottomRef} />
       </div>
 
-      {/* Xabar yozish maydoni */}
-      <form
-        onSubmit={handleSubmit}
-        className="flex items-center gap-2 border-t p-3"
-      >
-        <Input
+      {/* Attachment preview */}
+      {attached && (
+        <div className="mx-4 mb-1 flex items-center gap-2 rounded-lg border bg-muted/40 px-3 py-2">
+          {attached.previewUrl ? (
+            <img src={attached.previewUrl} alt="" className="h-10 w-10 rounded object-cover" />
+          ) : (
+            <FileText className="h-8 w-8 text-muted-foreground" />
+          )}
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-xs font-medium">{attached.file.name}</p>
+            <p className="text-xs text-muted-foreground">{formatFileSize(attached.file.size)}</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setAttached(null)}
+            className="rounded-full p-0.5 text-muted-foreground hover:text-foreground"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      )}
+
+      {/* Input toolbar */}
+      <div className="flex items-end gap-1.5 border-t px-3 py-2.5">
+        {/* File attachment */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          className="sr-only"
+          onChange={handleFileChange}
+          aria-label="Fayl biriktirish"
+        />
+        <button
+          type="button"
+          onClick={() => fileInputRef.current?.click()}
+          className="mb-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          title="Fayl biriktirish"
+        >
+          <Paperclip className="h-4.5 w-4.5" />
+        </button>
+
+        {/* Emoji picker */}
+        <Popover open={emojiOpen} onOpenChange={setEmojiOpen}>
+          <PopoverTrigger asChild>
+            <button
+              type="button"
+              className="mb-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              title="Emoji"
+            >
+              <Smile className="h-4.5 w-4.5" />
+            </button>
+          </PopoverTrigger>
+          <PopoverContent side="top" align="start" className="w-auto p-2">
+            <EmojiPicker onSelect={handleEmojiSelect} />
+          </PopoverContent>
+        </Popover>
+
+        {/* Text input */}
+        <textarea
+          ref={textareaRef}
           value={content}
           onChange={(e) => setContent(e.target.value)}
+          onKeyDown={handleKeyDown}
           placeholder="Xabar yozing..."
+          rows={1}
           autoComplete="off"
+          className={cn(
+            "flex-1 resize-none rounded-2xl border bg-muted/50 px-3.5 py-2 text-sm leading-snug",
+            "placeholder:text-muted-foreground",
+            "focus:outline-none focus:ring-1 focus:ring-ring",
+            "max-h-[120px] overflow-y-auto scrollbar-thin"
+          )}
         />
-        <Button
-          type="submit"
-          disabled={!content.trim() || sendMutation.isPending}
+
+        {/* Send button */}
+        <button
+          type="button"
+          onClick={handleSend}
+          disabled={!canSend}
+          className={cn(
+            "mb-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition-all duration-150",
+            canSend
+              ? "bg-primary text-primary-foreground shadow-md hover:scale-105 hover:shadow-lg"
+              : "bg-muted text-muted-foreground cursor-not-allowed"
+          )}
+          title="Yuborish"
         >
           <Send className="h-4 w-4" />
-          Yuborish
-        </Button>
-      </form>
+        </button>
+      </div>
     </div>
   )
 }
 
-// Chat xabarlari uchun pufakcha skeletlari (chap/o'ng navbatma-navbat).
 function ChatSkeleton() {
-  const widths = ["w-40", "w-56", "w-32", "w-48", "w-36"]
+  const items = [
+    { side: "start", w: "w-40" },
+    { side: "end", w: "w-56" },
+    { side: "start", w: "w-32" },
+    { side: "end", w: "w-48" },
+    { side: "start", w: "w-36" },
+  ]
   return (
-    <div className="space-y-3">
-      {widths.map((w, i) => {
-        const isOwn = i % 2 === 1
-        return (
-          <div
-            key={i}
-            className={cn("flex", isOwn ? "justify-end" : "justify-start")}
-          >
-            <Skeleton className={cn("h-10 rounded-lg", w)} />
-          </div>
-        )
-      })}
+    <div className="space-y-2">
+      {items.map((item, i) => (
+        <div key={i} className={cn("flex", item.side === "end" ? "justify-end" : "justify-start")}>
+          <Skeleton className={cn("h-9 rounded-2xl", item.w)} />
+        </div>
+      ))}
     </div>
   )
 }

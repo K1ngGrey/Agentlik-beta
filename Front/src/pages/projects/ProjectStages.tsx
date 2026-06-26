@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { Plus, ListChecks } from "lucide-react"
+import { Plus, ListChecks, ArrowRight } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import {
@@ -15,6 +15,7 @@ import StageFormDialog from "@/pages/projects/StageFormDialog"
 import StageDetailDialog from "@/pages/projects/StageDetailDialog"
 import EmptyState from "@/components/EmptyState"
 import ErrorState from "@/components/ErrorState"
+import { cn } from "@/lib/utils"
 import type { StageDto } from "@/types/stage"
 import { useStages } from "@/api/stages"
 import { useAuthStore } from "@/store/authStore"
@@ -26,35 +27,26 @@ interface ProjectStagesProps {
 export default function ProjectStages({ projectId }: ProjectStagesProps) {
   const role = useAuthStore((s) => s.user?.role)
   const isSuperAdmin = role === "SuperAdmin"
-
   const { data, isLoading, isError, refetch } = useStages(projectId)
-
   const [formOpen, setFormOpen] = useState(false)
-  // null — yaratish rejimi (tahrirlash detal modaliga 6-bosqichda ulanadi).
   const [editingStage, setEditingStage] = useState<StageDto | null>(null)
-  // Bosilgan bosqich — detal modali 6-bosqichda shu state ga ulanadi.
   const [selectedStage, setSelectedStage] = useState<StageDto | null>(null)
 
-  // Order bo'yicha tartiblangan ro'yxat.
   const stages = (data?.succeeded ? (data.result ?? []) : [])
     .slice()
     .sort((a, b) => a.order - b.order)
 
   const total = stages.length
-  const completed = stages.filter((s) => s.status === "Completed").length
-  const progress = total > 0 ? Math.round((completed / total) * 100) : 0
-  // Yangi bosqich uchun keyingi tartib raqami.
+  const completedCount = stages.filter((s) => s.status === "Completed").length
+  const progress =
+    total > 0 ? Math.round((completedCount / total) * 100) : 0
+
   const nextOrder =
     stages.length > 0 ? Math.max(...stages.map((s) => s.order)) + 1 : 1
 
   const handleCreate = () => {
     setEditingStage(null)
     setFormOpen(true)
-  }
-
-  // Card bosilganda — detal modali 6-bosqichda ulanadi.
-  const handleStageClick = (stage: StageDto) => {
-    setSelectedStage(stage)
   }
 
   return (
@@ -74,14 +66,12 @@ export default function ProjectStages({ projectId }: ProjectStagesProps) {
             </Button>
           )}
         </div>
-
-        {/* Umumiy progress */}
         {total > 0 && (
           <div className="space-y-1.5 pt-2">
             <div className="flex items-center justify-between text-sm text-muted-foreground">
               <span>Umumiy progress</span>
               <span>
-                {completed}/{total} tugallangan
+                {completedCount}/{total} tugallangan
               </span>
             </div>
             <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
@@ -135,22 +125,10 @@ export default function ProjectStages({ projectId }: ProjectStagesProps) {
         )}
 
         {!isLoading && !isError && total > 0 && (
-          <div
-            className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3"
-            data-selected-stage={selectedStage?.id ?? undefined}
-          >
-            {stages.map((stage) => (
-              <StageCard
-                key={stage.id}
-                stage={stage}
-                onClick={handleStageClick}
-              />
-            ))}
-          </div>
+          <StageGrid stages={stages} onStageClick={setSelectedStage} />
         )}
       </CardContent>
 
-      {/* Yaratish dialogi (faqat SuperAdmin uchun ochiladi) */}
       <StageFormDialog
         open={formOpen}
         onOpenChange={setFormOpen}
@@ -158,8 +136,6 @@ export default function ProjectStages({ projectId }: ProjectStagesProps) {
         stage={editingStage}
         nextOrder={nextOrder}
       />
-
-      {/* Detal modali — card bosilganda ochiladi */}
       <StageDetailDialog
         open={Boolean(selectedStage)}
         onOpenChange={(o) => !o && setSelectedStage(null)}
@@ -167,5 +143,53 @@ export default function ProjectStages({ projectId }: ProjectStagesProps) {
         stage={selectedStage}
       />
     </Card>
+  )
+}
+
+interface StageGridProps {
+  stages: StageDto[]
+  onStageClick: (stage: StageDto) => void
+}
+
+function StageGrid({ stages, onStageClick }: StageGridProps) {
+  return (
+    // We use a flat list with explicit connectors between consecutive cards.
+    // Each "cell" is a flex row: [card] [connector?]
+    // We arrange them in a CSS grid but insert connector overlays via a sibling div.
+    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      {stages.map((stage, index) => {
+        const prev = index > 0 ? stages[index - 1] : null
+        // This stage is the "next" target if the previous stage is completed
+        const isNextAfterCompleted =
+          prev?.status === "Completed" && stage.status !== "Completed"
+
+        return (
+          <div key={stage.id} className="relative">
+            {/* Connector arrow from previous completed stage */}
+            {isNextAfterCompleted && (
+              <ConnectorBadge />
+            )}
+            <StageCard stage={stage} onClick={onStageClick} />
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+// Small green arrow badge shown at the top-left of the card that follows a completed stage.
+function ConnectorBadge() {
+  return (
+    <div
+      className={cn(
+        "absolute -top-3 left-3 z-10 flex items-center gap-0.5",
+        "rounded-full border border-success/40 bg-success/15 px-1.5 py-0.5",
+        "text-[10px] font-semibold text-success",
+        "animate-in fade-in slide-in-from-top-1 duration-300"
+      )}
+    >
+      <ArrowRight className="h-2.5 w-2.5" />
+      Keyingi bosqich
+    </div>
   )
 }
