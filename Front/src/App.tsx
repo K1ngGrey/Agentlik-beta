@@ -6,6 +6,8 @@ import UsersPage from "@/pages/users/UsersPage"
 import ProjectsPage from "@/pages/projects/ProjectsPage"
 import ProjectDetailPage from "@/pages/projects/ProjectDetailPage"
 import GlobalChatPage from "@/pages/GlobalChatPage"
+import ProfilePage from "@/pages/ProfilePage"
+import SettingsPage from "@/pages/SettingsPage"
 import ProtectedRoute from "@/components/ProtectedRoute"
 import RoleGuard from "@/components/RoleGuard"
 import AppLayout from "@/layouts/AppLayout"
@@ -25,6 +27,10 @@ function App() {
           <Route path="/projects/:id" element={<ProjectDetailPage />} />
           {/* Umumiy chat — barcha rollar uchun */}
           <Route path="/chat" element={<GlobalChatPage />} />
+          {/* Profil — barcha rollar uchun */}
+          <Route path="/profile" element={<ProfilePage />} />
+          {/* Sozlamalar — barcha rollar uchun */}
+          <Route path="/settings" element={<SettingsPage />} />
           {/* Foydalanuvchilar boshqaruvi — faqat SuperAdmin */}
           <Route
             path="/users"

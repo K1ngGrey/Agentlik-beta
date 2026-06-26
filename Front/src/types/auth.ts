@@ -35,3 +35,14 @@ export interface LoginResponse {
   accessTokenExpiresAt: string
   user: UserDto
 }
+
+// O'z profilini tahrirlash so'rovi (faqat F.I.Sh).
+export interface UpdateProfileRequest {
+  fullName: string
+}
+
+// Parolni o'zgartirish so'rovi.
+export interface ChangePasswordRequest {
+  currentPassword: string
+  newPassword: string
+}

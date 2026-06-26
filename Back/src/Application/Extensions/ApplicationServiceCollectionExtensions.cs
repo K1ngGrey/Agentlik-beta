@@ -19,6 +19,7 @@ public static class ApplicationServiceCollectionExtensions
         services.AddScoped<IProjectService, ProjectService>();
         services.AddScoped<IStageService, StageService>();
         services.AddScoped<IChatService, ChatService>();
+        services.AddScoped<IProfileService, ProfileService>();
 
         return services;
     }

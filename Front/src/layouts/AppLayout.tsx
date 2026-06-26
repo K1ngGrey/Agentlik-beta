@@ -1,15 +1,6 @@
 import { useState } from "react"
-import { NavLink, Outlet, useNavigate } from "react-router-dom"
-import {
-  LayoutDashboard,
-  FolderKanban,
-  MessagesSquare,
-  Users,
-  Menu,
-  LogOut,
-  ChevronDown,
-  ShieldCheck,
-} from "lucide-react"
+import { Link, NavLink, Outlet, useNavigate } from "react-router-dom"
+import { LayoutDashboard, FolderKanban, MessagesSquare, Users, Menu, LogOut, ChevronDown, ShieldCheck, CircleUser as UserCircle, Settings } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
 
 import { cn } from "@/lib/utils"
@@ -189,6 +180,19 @@ export default function AppLayout() {
                     {ROLE_LABELS[user.role]}
                   </span>
                 </DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem asChild>
+                  <Link to="/profile">
+                    <UserCircle className="h-4 w-4" />
+                    Profil
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem asChild>
+                  <Link to="/settings">
+                    <Settings className="h-4 w-4" />
+                    Sozlamalar
+                  </Link>
+                </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
                   disabled={isLoggingOut}

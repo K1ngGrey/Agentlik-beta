@@ -11,6 +11,8 @@ interface AuthState {
   setAuth: (loginResponse: LoginResponse) => void
   // Holatni va localStorage'ni tozalaydi (logout).
   clearAuth: () => void
+  // Profil tahrirlangach, foydalanuvchi ma'lumotini yangilaydi.
+  updateUser: (user: UserDto) => void
 }
 
 // Sahifa yangilanganda boshlang'ich holatni localStorage'dan tiklaymiz.
@@ -50,5 +52,10 @@ export const useAuthStore = create<AuthState>((set) => ({
       accessToken: null,
       isAuthenticated: false,
     })
+  },
+
+  updateUser: (user) => {
+    tokenStorage.setUser(user)
+    set({ user })
   },
 }))
