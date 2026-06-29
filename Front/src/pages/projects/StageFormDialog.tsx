@@ -256,11 +256,6 @@ export default function StageFormDialog({
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>Holat</FormLabel>
-                        {/*
-                          key={field.value} forces remount so the trigger label
-                          and checkmark always reflect the correct value after
-                          form.reset() or external updates.
-                        */}
                         <Select
                           key={field.value}
                           defaultValue={field.value}
