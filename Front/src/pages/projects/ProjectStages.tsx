@@ -157,26 +157,18 @@ function StageGrid({ stages, onStageClick }: StageGridProps) {
       const fr = fromEl.getBoundingClientRect()
       const tr = toEl.getBoundingClientRect()
 
-      // Same row (grid hasn't wrapped) → connect right edge to left edge.
-      // Wrapped to a new row → connect bottom edge to top edge instead,
-      // otherwise the bezier cuts a long diagonal across the whole grid.
+      // Only draw a connector within the same row. Once the grid wraps,
+      // a line from one row to the next reads as visual noise rather
+      // than a meaningful "next step" cue, so we simply skip it.
       const sameRow = Math.abs(fr.top - tr.top) < 8
+      if (!sameRow) continue
 
-      if (sameRow) {
-        newLines.push({
-          x1: fr.right - gridRect.left,
-          y1: fr.top + fr.height / 2 - gridRect.top,
-          x2: tr.left - gridRect.left,
-          y2: tr.top + tr.height / 2 - gridRect.top,
-        })
-      } else {
-        newLines.push({
-          x1: fr.left + fr.width / 2 - gridRect.left,
-          y1: fr.bottom - gridRect.top,
-          x2: tr.left + tr.width / 2 - gridRect.left,
-          y2: tr.top - gridRect.top,
-        })
-      }
+      newLines.push({
+        x1: fr.right - gridRect.left,
+        y1: fr.top + fr.height / 2 - gridRect.top,
+        x2: tr.left - gridRect.left,
+        y2: tr.top + tr.height / 2 - gridRect.top,
+      })
     }
 
     // Bail out if nothing changed to avoid render loops
@@ -237,24 +229,12 @@ function StageGrid({ stages, onStageClick }: StageGridProps) {
             </marker>
           </defs>
           {lines.map((l, i) => {
-            // Draw a smooth cubic bezier. For horizontal connections
-            // (same row) bow the curve along X; for vertical ones
-            // (wrapped to a new row) bow it along Y instead.
-            const isVertical = Math.abs(l.y2 - l.y1) > Math.abs(l.x2 - l.x1)
-            let cx1: number, cy1: number, cx2: number, cy2: number
-            if (isVertical) {
-              const dy = Math.abs(l.y2 - l.y1) * 0.5
-              cx1 = l.x1
-              cy1 = l.y1 + dy
-              cx2 = l.x2
-              cy2 = l.y2 - dy
-            } else {
-              const dx = Math.abs(l.x2 - l.x1) * 0.5
-              cx1 = l.x1 + dx
-              cy1 = l.y1
-              cx2 = l.x2 - dx
-              cy2 = l.y2
-            }
+            // Draw a smooth cubic bezier from right-centre → left-centre
+            const dx = Math.abs(l.x2 - l.x1) * 0.5
+            const cx1 = l.x1 + dx
+            const cy1 = l.y1
+            const cx2 = l.x2 - dx
+            const cy2 = l.y2
             const d = `M ${l.x1} ${l.y1} C ${cx1} ${cy1}, ${cx2} ${cy2}, ${l.x2} ${l.y2}`
             return (
               <path
