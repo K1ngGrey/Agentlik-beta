@@ -267,18 +267,23 @@ export default function ProjectFormDialog({
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Holat</FormLabel>
+                    {/*
+                      key={field.value} forces Radix Select to remount when the
+                      value changes externally (e.g. form.reset), so the trigger
+                      always shows the correct label and the checkmark lands on
+                      the right item.
+                    */}
                     <Select
-                      value={field.value}
-                      onValueChange={(val) => {
-                        field.onChange(val)
-                      }}
+                      key={field.value}
+                      defaultValue={field.value}
+                      onValueChange={field.onChange}
                     >
                       <FormControl>
                         <SelectTrigger>
                           <SelectValue placeholder="Holatni tanlang" />
                         </SelectTrigger>
                       </FormControl>
-                      <SelectContent>
+                      <SelectContent position="popper">
                         {STATUS_OPTIONS.map((option) => (
                           <SelectItem
                             key={option.value}

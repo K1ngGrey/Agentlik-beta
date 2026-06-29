@@ -33,14 +33,13 @@ import {
 import type { StageDto, StageStatus } from "@/types/stage"
 import { useCreateStage, useUpdateStage } from "@/api/stages"
 
-// Holat tanlovi uchun o'zbekcha matnlar.
 const STATUS_OPTIONS: { value: StageStatus; label: string }[] = [
   { value: "NotStarted", label: "Boshlanmagan" },
   { value: "InProgress", label: "Jarayonda" },
   { value: "Completed", label: "Tugallangan" },
+  { value: "Blocked", label: "To'siqda" },
 ]
 
-// Bitta sxema bilan ham yaratish, ham tahrirlashni qoplaymiz.
 const stageSchema = z.object({
   name: z.string().min(1, "Bosqich nomi kiritilishi shart"),
   description: z.string(),
@@ -48,20 +47,24 @@ const stageSchema = z.object({
     .number({ invalid_type_error: "Tartib raqami kiritilishi shart" })
     .int("Tartib butun son bo'lishi kerak")
     .min(0, "Tartib manfiy bo'lishi mumkin emas"),
-  status: z.enum(["NotStarted", "InProgress", "Completed"]),
+  status: z.enum(["NotStarted", "InProgress", "Completed", "Blocked"]),
   startDate: z.string(),
   endDate: z.string(),
+  progress: z.coerce
+    .number({ invalid_type_error: "Progress kiritilishi shart" })
+    .int()
+    .min(0)
+    .max(100),
+  owner: z.string(),
 })
 
 type StageFormValues = z.infer<typeof stageSchema>
 
-// ISO sanani <input type="date"> uchun "yyyy-mm-dd" ko'rinishiga keltiradi.
 function toDateInput(value: string | null): string {
   if (!value) return ""
   return value.slice(0, 10)
 }
 
-// Bo'sh sana — null, aks holda ISO ko'rinishida yuboramiz.
 function fromDateInput(value: string): string | null {
   if (!value) return null
   return new Date(value).toISOString()
@@ -71,9 +74,7 @@ interface StageFormDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   projectId: string
-  // null bo'lsa — yaratish rejimi, aks holda tahrirlash rejimi.
   stage: StageDto | null
-  // Yangi bosqich uchun taklif qilinadigan tartib raqami.
   nextOrder: number
 }
 
@@ -98,13 +99,13 @@ export default function StageFormDialog({
       status: "NotStarted",
       startDate: "",
       endDate: "",
+      progress: 0,
+      owner: "",
     },
   })
 
-  // Dialog ochilganda tanlangan bosqichga mos qiymatlarni yuklaymiz.
   useEffect(() => {
     if (!open) return
-
     if (stage) {
       form.reset({
         name: stage.name,
@@ -113,6 +114,8 @@ export default function StageFormDialog({
         status: stage.status,
         startDate: toDateInput(stage.startDate),
         endDate: toDateInput(stage.endDate),
+        progress: stage.progress,
+        owner: stage.owner ?? "",
       })
     } else {
       form.reset({
@@ -122,6 +125,8 @@ export default function StageFormDialog({
         status: "NotStarted",
         startDate: "",
         endDate: "",
+        progress: 0,
+        owner: "",
       })
     }
   }, [open, stage, nextOrder, form])
@@ -138,6 +143,8 @@ export default function StageFormDialog({
             status: values.status,
             startDate: fromDateInput(values.startDate),
             endDate: fromDateInput(values.endDate),
+            progress: values.progress,
+            owner: values.owner.trim() || null,
           },
         },
         {
@@ -174,9 +181,12 @@ export default function StageFormDialog({
     }
   }
 
+  const currentStatus = form.watch("status")
+  const currentProgress = form.watch("progress")
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent className="max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>
             {isEdit ? "Bosqichni tahrirlash" : "Yangi bosqich"}
@@ -236,35 +246,111 @@ export default function StageFormDialog({
               )}
             />
 
-            {/* Holat va sanalar faqat tahrirlash rejimida ko'rinadi. */}
             {isEdit && (
               <>
+                {/* Status + Progress row */}
+                <div className="grid grid-cols-2 gap-4">
+                  <FormField
+                    control={form.control}
+                    name="status"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Holat</FormLabel>
+                        {/*
+                          key={field.value} forces remount so the trigger label
+                          and checkmark always reflect the correct value after
+                          form.reset() or external updates.
+                        */}
+                        <Select
+                          key={field.value}
+                          defaultValue={field.value}
+                          onValueChange={(val) => {
+                            field.onChange(val)
+                            // Auto-set progress when marking Completed
+                            if (val === "Completed") {
+                              form.setValue("progress", 100)
+                            } else if (
+                              val === "NotStarted" &&
+                              form.getValues("progress") === 100
+                            ) {
+                              form.setValue("progress", 0)
+                            }
+                          }}
+                        >
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Holatni tanlang" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent position="popper">
+                            {STATUS_OPTIONS.map((option) => (
+                              <SelectItem
+                                key={option.value}
+                                value={option.value}
+                              >
+                                {option.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="progress"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Progress ({currentProgress}%)</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="range"
+                            min={0}
+                            max={100}
+                            step={5}
+                            className="h-9 cursor-pointer accent-primary"
+                            {...field}
+                            onChange={(e) => {
+                              const val = Number(e.target.value)
+                              field.onChange(val)
+                              // Auto-update status based on progress
+                              if (val === 100 && currentStatus !== "Completed") {
+                                form.setValue("status", "Completed")
+                              } else if (
+                                val > 0 &&
+                                val < 100 &&
+                                currentStatus === "NotStarted"
+                              ) {
+                                form.setValue("status", "InProgress")
+                              } else if (
+                                val === 0 &&
+                                currentStatus === "Completed"
+                              ) {
+                                form.setValue("status", "NotStarted")
+                              }
+                            }}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+
                 <FormField
                   control={form.control}
-                  name="status"
+                  name="owner"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Holat</FormLabel>
-                      <Select
-                        value={field.value}
-                        onValueChange={field.onChange}
-                      >
-                        <FormControl>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Holatni tanlang" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          {STATUS_OPTIONS.map((option) => (
-                            <SelectItem
-                              key={option.value}
-                              value={option.value}
-                            >
-                              {option.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      <FormLabel>Mas'ul shaxs</FormLabel>
+                      <FormControl>
+                        <Input
+                          placeholder="Mas'ul shaxs ismi"
+                          {...field}
+                        />
+                      </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
