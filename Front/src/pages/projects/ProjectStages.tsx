@@ -122,11 +122,6 @@ export default function ProjectStages({ projectId }: ProjectStagesProps) {
 // Stage grid with SVG connector lines
 // ---------------------------------------------------------------------------
 
-interface Connector {
-  fromIdx: number
-  toIdx: number
-}
-
 interface StageGridProps {
   stages: StageDto[]
   onStageClick: (stage: StageDto) => void
@@ -135,18 +130,13 @@ interface StageGridProps {
 function StageGrid({ stages, onStageClick }: StageGridProps) {
   const gridRef = useRef<HTMLDivElement>(null)
   const cardRefs = useRef<Map<number, HTMLDivElement>>(new Map())
+  // Stable ref — measure() reads from here instead of closing over `stages`
+  const stagesRef = useRef(stages)
+  stagesRef.current = stages
+
   const [lines, setLines] = useState<
     Array<{ x1: number; y1: number; x2: number; y2: number }>
   >([])
-
-  // Determine which consecutive pairs should have a connector
-  const connectors: Connector[] = []
-  for (let i = 0; i < stages.length - 1; i++) {
-    const s = stages[i]
-    if (s.status === "Completed" || s.progress >= 100) {
-      connectors.push({ fromIdx: i, toIdx: i + 1 })
-    }
-  }
 
   // Index of the "next active" card: first stage after the last completed run
   const lastCompletedIdx = stages.reduce(
@@ -159,40 +149,59 @@ function StageGrid({ stages, onStageClick }: StageGridProps) {
       ? lastCompletedIdx + 1
       : -1
 
+  // Stable function — empty dep array; reads data from refs only
   const measure = useCallback(() => {
-    if (!gridRef.current || connectors.length === 0) {
+    const current = stagesRef.current
+    if (!gridRef.current) {
       setLines([])
       return
     }
     const gridRect = gridRef.current.getBoundingClientRect()
-    const newLines: typeof lines = []
+    const newLines: Array<{ x1: number; y1: number; x2: number; y2: number }> = []
 
-    for (const { fromIdx, toIdx } of connectors) {
-      const fromEl = cardRefs.current.get(fromIdx)
-      const toEl = cardRefs.current.get(toIdx)
+    for (let i = 0; i < current.length - 1; i++) {
+      const s = current[i]
+      if (s.status !== "Completed" && s.progress < 100) continue
+      const fromEl = cardRefs.current.get(i)
+      const toEl = cardRefs.current.get(i + 1)
       if (!fromEl || !toEl) continue
-
-      const fromRect = fromEl.getBoundingClientRect()
-      const toRect = toEl.getBoundingClientRect()
-
-      // Origin: right-centre of "from" card
-      const x1 = fromRect.right - gridRect.left
-      const y1 = fromRect.top + fromRect.height / 2 - gridRect.top
-
-      // Target: left-centre of "to" card
-      const x2 = toRect.left - gridRect.left
-      const y2 = toRect.top + toRect.height / 2 - gridRect.top
-
-      newLines.push({ x1, y1, x2, y2 })
+      const fr = fromEl.getBoundingClientRect()
+      const tr = toEl.getBoundingClientRect()
+      newLines.push({
+        x1: fr.right - gridRect.left,
+        y1: fr.top + fr.height / 2 - gridRect.top,
+        x2: tr.left - gridRect.left,
+        y2: tr.top + tr.height / 2 - gridRect.top,
+      })
     }
-    setLines(newLines)
-  }, [connectors, stages]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Measure after paint and on resize
+    // Bail out if nothing changed to avoid render loops
+    setLines((prev) => {
+      if (
+        prev.length === newLines.length &&
+        prev.every(
+          (l, i) =>
+            l.x1 === newLines[i].x1 &&
+            l.y1 === newLines[i].y1 &&
+            l.x2 === newLines[i].x2 &&
+            l.y2 === newLines[i].y2
+        )
+      )
+        return prev
+      return newLines
+    })
+  }, []) // intentionally stable
+
+  // Re-measure when stage data changes
   useLayoutEffect(() => {
     measure()
+  }, [stages, measure])
+
+  // Re-measure when container is resized (1→2→3 column breakpoints)
+  useLayoutEffect(() => {
+    if (!gridRef.current) return
     const ro = new ResizeObserver(measure)
-    if (gridRef.current) ro.observe(gridRef.current)
+    ro.observe(gridRef.current)
     return () => ro.disconnect()
   }, [measure])
 
