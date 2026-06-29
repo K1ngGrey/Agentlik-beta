@@ -3,7 +3,6 @@ import type { UseMutationResult, UseQueryResult } from "@tanstack/react-query"
 import { MessagesSquare, Send, Paperclip, Smile, X, FileText } from "lucide-react"
 import { toast } from "sonner"
 
-import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import {
   Popover,
@@ -19,8 +18,10 @@ import type { ApiResult } from "@/types/api"
 import type { ChatMessageDto } from "@/types/chat"
 
 interface ChatBoxProps {
-  useMessages: () => UseQueryResult<ApiResult<ChatMessageDto[]>>
-  useSendMessage: () => UseMutationResult<ApiResult<ChatMessageDto>, unknown, string>
+  /** Already-called query result — do NOT pass a hook factory, call the hook in the parent. */
+  messagesQuery: UseQueryResult<ApiResult<ChatMessageDto[]>>
+  /** Already-called mutation result — same rule. */
+  sendMutation: UseMutationResult<ApiResult<ChatMessageDto>, unknown, string>
   className?: string
 }
 
@@ -36,8 +37,6 @@ function formatFileSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
-// Group consecutive messages by the same sender so we can add "tail" only
-// on the last bubble in each group.
 interface MessageGroup {
   senderId: string
   senderName: string
@@ -45,7 +44,10 @@ interface MessageGroup {
   messages: ChatMessageDto[]
 }
 
-function groupMessages(messages: ChatMessageDto[], currentUserId: string | undefined): MessageGroup[] {
+function groupMessages(
+  messages: ChatMessageDto[],
+  currentUserId: string | undefined
+): MessageGroup[] {
   const groups: MessageGroup[] = []
   for (const msg of messages) {
     const isOwn = msg.senderId === currentUserId
@@ -53,7 +55,12 @@ function groupMessages(messages: ChatMessageDto[], currentUserId: string | undef
     if (last && last.senderId === msg.senderId) {
       last.messages.push(msg)
     } else {
-      groups.push({ senderId: msg.senderId, senderName: msg.senderName, isOwn, messages: [msg] })
+      groups.push({
+        senderId: msg.senderId,
+        senderName: msg.senderName,
+        isOwn,
+        messages: [msg],
+      })
     }
   }
   return groups
@@ -64,10 +71,19 @@ interface AttachedFile {
   previewUrl: string | null
 }
 
-export default function ChatBox({ useMessages, useSendMessage, className }: ChatBoxProps) {
+function parseMessage(msg: string) {
+  const m = msg.match(/^\[Fayl: (.+?) \((.+?)\)\]([\s\S]*)$/)
+  if (m) return { fileName: m[1], fileSize: m[2], text: m[3].trim() }
+  return null
+}
+
+export default function ChatBox({
+  messagesQuery,
+  sendMutation,
+  className,
+}: ChatBoxProps) {
   const currentUserId = useAuthStore((s) => s.user?.id)
-  const { data, isLoading, isError, refetch } = useMessages()
-  const sendMutation = useSendMessage()
+  const { data, isLoading, isError, refetch } = messagesQuery
 
   const [content, setContent] = useState("")
   const [attached, setAttached] = useState<AttachedFile | null>(null)
@@ -83,7 +99,6 @@ export default function ChatBox({ useMessages, useSendMessage, className }: Chat
     bottomRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [messages.length])
 
-  // Auto-grow textarea
   useEffect(() => {
     const el = textareaRef.current
     if (!el) return
@@ -147,16 +162,7 @@ export default function ChatBox({ useMessages, useSendMessage, className }: Chat
     setEmojiOpen(false)
   }
 
-  // Parse file attachment from message content
-  const parseMessage = (msg: string) => {
-    const fileMatch = msg.match(/^\[Fayl: (.+?) \((.+?)\)\]([\s\S]*)$/)
-    if (fileMatch) {
-      return { fileName: fileMatch[1], fileSize: fileMatch[2], text: fileMatch[3].trim() }
-    }
-    return null
-  }
-
-  const canSend = (content.trim() || attached) && !sendMutation.isPending
+  const canSend = Boolean((content.trim() || attached) && !sendMutation.isPending)
 
   return (
     <div className={cn("flex flex-col bg-background", className)}>
@@ -164,16 +170,31 @@ export default function ChatBox({ useMessages, useSendMessage, className }: Chat
       <div className="flex-1 overflow-y-auto px-4 py-3 space-y-1">
         {isLoading && <ChatSkeleton />}
         {!isLoading && isError && (
-          <ErrorState description="Xabarlarni yuklashda xatolik yuz berdi." onRetry={() => refetch()} />
+          <ErrorState
+            description="Xabarlarni yuklashda xatolik yuz berdi."
+            onRetry={() => refetch()}
+          />
         )}
         {!isLoading && !isError && messages.length === 0 && (
-          <EmptyState icon={MessagesSquare} title="Hali xabarlar yo'q" description="Birinchi bo'lib yozing." />
+          <EmptyState
+            icon={MessagesSquare}
+            title="Hali xabarlar yo'q"
+            description="Birinchi bo'lib yozing."
+          />
         )}
 
         {groups.map((group, gi) => (
-          <div key={`${group.senderId}-${gi}`} className={cn("flex flex-col gap-0.5", group.isOwn ? "items-end" : "items-start")}>
+          <div
+            key={`${group.senderId}-${gi}`}
+            className={cn(
+              "flex flex-col gap-0.5",
+              group.isOwn ? "items-end" : "items-start"
+            )}
+          >
             {!group.isOwn && (
-              <span className="ml-2 text-[11px] font-medium text-muted-foreground">{group.senderName}</span>
+              <span className="ml-2 text-[11px] font-medium text-muted-foreground">
+                {group.senderName}
+              </span>
             )}
             {group.messages.map((message, mi) => {
               const isLast = mi === group.messages.length - 1
@@ -184,38 +205,60 @@ export default function ChatBox({ useMessages, useSendMessage, className }: Chat
                   className={cn(
                     "relative max-w-[70%] break-words",
                     group.isOwn
-                      ? cn("rounded-[14px] rounded-br-[4px]", !isLast && "rounded-br-[14px]")
-                      : cn("rounded-[14px] rounded-bl-[4px]", !isLast && "rounded-bl-[14px]"),
+                      ? cn(
+                          "rounded-[14px] rounded-br-[4px]",
+                          !isLast && "rounded-br-[14px]"
+                        )
+                      : cn(
+                          "rounded-[14px] rounded-bl-[4px]",
+                          !isLast && "rounded-bl-[14px]"
+                        ),
                     group.isOwn
                       ? "bg-primary text-primary-foreground"
                       : "bg-muted text-foreground"
                   )}
-                  style={{ paddingTop: 7, paddingBottom: 7, paddingLeft: 12, paddingRight: 12 }}
+                  style={{
+                    paddingTop: 7,
+                    paddingBottom: 7,
+                    paddingLeft: 12,
+                    paddingRight: 12,
+                  }}
                 >
                   {parsed ? (
                     <div className="space-y-1.5">
-                      {/* File attachment card */}
-                      <div className={cn(
-                        "flex items-center gap-2 rounded-lg p-2",
-                        group.isOwn ? "bg-primary-foreground/10" : "bg-background/60"
-                      )}>
+                      <div
+                        className={cn(
+                          "flex items-center gap-2 rounded-lg p-2",
+                          group.isOwn
+                            ? "bg-primary-foreground/10"
+                            : "bg-background/60"
+                        )}
+                      >
                         <FileText className="h-6 w-6 shrink-0 opacity-70" />
                         <div className="min-w-0">
-                          <p className="truncate text-sm font-medium leading-tight">{parsed.fileName}</p>
+                          <p className="truncate text-sm font-medium leading-tight">
+                            {parsed.fileName}
+                          </p>
                           <p className="text-xs opacity-60">{parsed.fileSize}</p>
                         </div>
                       </div>
-                      {parsed.text && <p className="whitespace-pre-wrap text-sm leading-snug">{parsed.text}</p>}
+                      {parsed.text && (
+                        <p className="whitespace-pre-wrap text-sm leading-snug">
+                          {parsed.text}
+                        </p>
+                      )}
                     </div>
                   ) : (
-                    <p className="whitespace-pre-wrap text-sm leading-snug">{message.content}</p>
+                    <p className="whitespace-pre-wrap text-sm leading-snug">
+                      {message.content}
+                    </p>
                   )}
-                  {/* Time + padding so text doesn't overlap */}
                   <span
                     className={cn(
-                      "ml-3 mt-0.5 inline-block select-none whitespace-nowrap align-bottom text-[10px] leading-none",
-                      group.isOwn ? "text-primary-foreground/60" : "text-muted-foreground",
-                      "float-right"
+                      "ml-3 mt-0.5 inline-block select-none whitespace-nowrap align-bottom text-[10px] leading-none float-right",
+                      group.isOwn
+                        ? "text-primary-foreground/60"
+                        : "text-muted-foreground"
                     )}
                   >
                     {formatTime(message.sentAt)}
@@ -232,13 +275,19 @@ export default function ChatBox({ useMessages, useSendMessage, className }: Chat
       {attached && (
         <div className="mx-4 mb-1 flex items-center gap-2 rounded-lg border bg-muted/40 px-3 py-2">
           {attached.previewUrl ? (
-            <img src={attached.previewUrl} alt="" className="h-10 w-10 rounded object-cover" />
+            <img
+              src={attached.previewUrl}
+              alt=""
+              className="h-10 w-10 rounded object-cover"
+            />
           ) : (
             <FileText className="h-8 w-8 text-muted-foreground" />
           )}
           <div className="min-w-0 flex-1">
             <p className="truncate text-xs font-medium">{attached.file.name}</p>
-            <p className="text-xs text-muted-foreground">{formatFileSize(attached.file.size)}</p>
+            <p className="text-xs text-muted-foreground">
+              {formatFileSize(attached.file.size)}
+            </p>
           </div>
           <button
             type="button"
@@ -252,7 +301,6 @@ export default function ChatBox({ useMessages, useSendMessage, className }: Chat
 
       {/* Input toolbar */}
       <div className="flex items-end gap-1.5 border-t px-3 py-2.5">
-        {/* File attachment */}
         <input
           ref={fileInputRef}
           type="file"
@@ -266,10 +314,9 @@ export default function ChatBox({ useMessages, useSendMessage, className }: Chat
           className="mb-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
           title="Fayl biriktirish"
         >
-          <Paperclip className="h-4.5 w-4.5" />
+          <Paperclip className="h-[18px] w-[18px]" />
         </button>
 
-        {/* Emoji picker */}
         <Popover open={emojiOpen} onOpenChange={setEmojiOpen}>
           <PopoverTrigger asChild>
             <button
@@ -277,7 +324,7 @@ export default function ChatBox({ useMessages, useSendMessage, className }: Chat
               className="mb-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
               title="Emoji"
             >
-              <Smile className="h-4.5 w-4.5" />
+              <Smile className="h-[18px] w-[18px]" />
             </button>
           </PopoverTrigger>
           <PopoverContent side="top" align="start" className="w-auto p-2">
@@ -285,7 +332,6 @@ export default function ChatBox({ useMessages, useSendMessage, className }: Chat
           </PopoverContent>
         </Popover>
 
-        {/* Text input */}
         <textarea
           ref={textareaRef}
           value={content}
@@ -298,11 +344,10 @@ export default function ChatBox({ useMessages, useSendMessage, className }: Chat
             "flex-1 resize-none rounded-2xl border bg-muted/50 px-3.5 py-2 text-sm leading-snug",
             "placeholder:text-muted-foreground",
             "focus:outline-none focus:ring-1 focus:ring-ring",
-            "max-h-[120px] overflow-y-auto scrollbar-thin"
+            "max-h-[120px] overflow-y-auto"
           )}
         />
 
-        {/* Send button */}
         <button
           type="button"
           onClick={handleSend}
@@ -333,7 +378,13 @@ function ChatSkeleton() {
   return (
     <div className="space-y-2">
       {items.map((item, i) => (
-        <div key={i} className={cn("flex", item.side === "end" ? "justify-end" : "justify-start")}>
+        <div
+          key={i}
+          className={cn(
+            "flex",
+            item.side === "end" ? "justify-end" : "justify-start"
+          )}
+        >
           <Skeleton className={cn("h-9 rounded-2xl", item.w)} />
         </div>
       ))}

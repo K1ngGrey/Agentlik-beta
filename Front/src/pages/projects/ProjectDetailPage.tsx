@@ -22,8 +22,12 @@ export default function ProjectDetailPage() {
   const { id = "" } = useParams()
   const navigate = useNavigate()
 
-  const { data, isLoading, isError, refetch } = useProject(id)
-  const project = data?.succeeded ? data.result : null
+  const projectQuery = useProject(id)
+  const project = projectQuery.data?.succeeded ? projectQuery.data.result : null
+
+  // Hooks called unconditionally at the top level — never inside callbacks or conditions
+  const messagesQuery = useProjectMessages(id)
+  const sendMutation = useSendProjectMessage(id)
 
   return (
     <div className="space-y-6">
@@ -37,7 +41,7 @@ export default function ProjectDetailPage() {
         Loyihalarga qaytish
       </Button>
 
-      {isLoading && (
+      {projectQuery.isLoading && (
         <div className="space-y-2">
           <div className="flex items-center gap-3">
             <Skeleton className="h-8 w-64" />
@@ -47,23 +51,20 @@ export default function ProjectDetailPage() {
         </div>
       )}
 
-      {!isLoading && (isError || !project) && (
+      {!projectQuery.isLoading && (projectQuery.isError || !project) && (
         <ErrorState
           title="Loyiha topilmadi"
           description="Loyihani yuklashda xatolik yuz berdi yoki loyiha mavjud emas."
-          onRetry={() => refetch()}
+          onRetry={() => projectQuery.refetch()}
         />
       )}
 
-      {!isLoading && project && (
+      {!projectQuery.isLoading && project && (
         <>
-          {/* Boy sarlavha: kod, nom, status, mijoz/muddat, progress, sanoq */}
           <ProjectHeader project={project} />
 
-          {/* Bosqichlar bo'limi */}
           <ProjectStages projectId={project.id} />
 
-          {/* Chat bo'limi — Telegram uslubida: chapda a'zolar, o'ngda suhbat */}
           <Card>
             <CardHeader>
               <CardTitle>Chat</CardTitle>
@@ -74,16 +75,14 @@ export default function ProjectDetailPage() {
             </CardHeader>
             <CardContent>
               <div className="grid h-[28rem] grid-cols-1 overflow-hidden rounded-md border bg-background sm:grid-cols-[16rem_1fr]">
-                {/* Chap panel — a'zolar (kichik ekranda yashiriladi) */}
                 <div className="hidden sm:block">
                   <ProjectMembersSidebar projectId={project.id} />
                 </div>
 
-                {/* O'ng panel — suhbat */}
                 <ChatBox
                   className="h-full rounded-none border-0"
-                  useMessages={() => useProjectMessages(project.id)}
-                  useSendMessage={() => useSendProjectMessage(project.id)}
+                  messagesQuery={messagesQuery}
+                  sendMutation={sendMutation}
                 />
               </div>
             </CardContent>
