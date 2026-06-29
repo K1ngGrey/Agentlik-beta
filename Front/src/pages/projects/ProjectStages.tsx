@@ -138,17 +138,6 @@ function StageGrid({ stages, onStageClick }: StageGridProps) {
     Array<{ x1: number; y1: number; x2: number; y2: number }>
   >([])
 
-  // Index of the "next active" card: first stage after the last completed run
-  const lastCompletedIdx = stages.reduce(
-    (last, s, i) =>
-      s.status === "Completed" || s.progress >= 100 ? i : last,
-    -1
-  )
-  const nextActiveIdx =
-    lastCompletedIdx >= 0 && lastCompletedIdx < stages.length - 1
-      ? lastCompletedIdx + 1
-      : -1
-
   // Stable function — empty dep array; reads data from refs only
   const measure = useCallback(() => {
     const current = stagesRef.current
@@ -271,7 +260,6 @@ function StageGrid({ stages, onStageClick }: StageGridProps) {
           >
             <StageCard
               stage={stage}
-              isNextActive={index === nextActiveIdx}
               onClick={onStageClick}
             />
           </div>

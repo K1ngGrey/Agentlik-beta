@@ -125,6 +125,25 @@ public class StageService : IStageService
 
         stage.UpdatedAt = DateTime.UtcNow;
 
+        // When a stage is completed, automatically activate the next stage
+        // in order (if it exists and hasn't started yet), so the badge and
+        // the visual "active" state stay in sync instead of relying on the
+        // frontend to guess which card is "next".
+        if (request.Status == StageStatus.Completed)
+        {
+            var nextStage = await _context.ProjectStages
+                .Where(s => s.ProjectId == stage.ProjectId && s.Order > stage.Order)
+                .OrderBy(s => s.Order)
+                .FirstOrDefaultAsync();
+
+            if (nextStage is not null && nextStage.Status == StageStatus.NotStarted)
+            {
+                nextStage.Status = StageStatus.InProgress;
+                nextStage.StartDate ??= DateTime.UtcNow;
+                nextStage.UpdatedAt = DateTime.UtcNow;
+            }
+        }
+
         await _context.SaveChangesAsync();
 
         return ApiResult<StageDto>.Success(MapToDto(stage));

@@ -25,14 +25,11 @@ function visualState(stage: StageDto): "completed" | "active" | "blocked" | "idl
 
 interface StageCardProps {
   stage: StageDto
-  /** True when this card immediately follows a completed stage. */
-  isNextActive?: boolean
   onClick: (stage: StageDto) => void
 }
 
 export default function StageCard({
   stage,
-  isNextActive = false,
   onClick,
 }: StageCardProps) {
   const lastDate = stage.events[0]?.date ?? stage.startDate ?? null
@@ -70,13 +67,7 @@ export default function StageCard({
         state === "active" &&
           "shadow-[inset_0_0_0_1px_hsl(var(--warning)/0.35)] hover:shadow-[0_0_0_1.5px_hsl(var(--warning)/0.6),0_4px_16px_hsl(var(--warning)/0.20)]",
         state === "blocked" &&
-          "hover:shadow-[0_0_0_1.5px_hsl(var(--destructive)/0.5),0_4px_16px_hsl(var(--destructive)/0.15)]",
-
-        // If backend says InProgress but this card is the designated "next"
-        // after a completed one, add a subtle yellow pulse ring
-        isNextActive &&
-          state !== "completed" &&
-          "shadow-[inset_0_0_0_1.5px_hsl(var(--warning)/0.5)]"
+          "hover:shadow-[0_0_0_1.5px_hsl(var(--destructive)/0.5),0_4px_16px_hsl(var(--destructive)/0.15)]"
       )}
     >
       <CardContent className="flex flex-1 flex-col gap-3 p-4">
