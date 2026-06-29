@@ -138,6 +138,17 @@ function StageGrid({ stages, onStageClick }: StageGridProps) {
     Array<{ x1: number; y1: number; x2: number; y2: number }>
   >([])
 
+  // Index of the "next active" card: first stage after the last completed run
+  const lastCompletedIdx = stages.reduce(
+    (last, s, i) =>
+      s.status === "Completed" || s.progress >= 100 ? i : last,
+    -1
+  )
+  const nextActiveIdx =
+    lastCompletedIdx >= 0 && lastCompletedIdx < stages.length - 1
+      ? lastCompletedIdx + 1
+      : -1
+
   // Stable function — empty dep array; reads data from refs only
   const measure = useCallback(() => {
     const current = stagesRef.current
@@ -156,13 +167,6 @@ function StageGrid({ stages, onStageClick }: StageGridProps) {
       if (!fromEl || !toEl) continue
       const fr = fromEl.getBoundingClientRect()
       const tr = toEl.getBoundingClientRect()
-
-      // Only draw a connector within the same row. Once the grid wraps,
-      // a line from one row to the next reads as visual noise rather
-      // than a meaningful "next step" cue, so we simply skip it.
-      const sameRow = Math.abs(fr.top - tr.top) < 8
-      if (!sameRow) continue
-
       newLines.push({
         x1: fr.right - gridRect.left,
         y1: fr.top + fr.height / 2 - gridRect.top,
@@ -267,6 +271,7 @@ function StageGrid({ stages, onStageClick }: StageGridProps) {
           >
             <StageCard
               stage={stage}
+              isNextActive={index === nextActiveIdx}
               onClick={onStageClick}
             />
           </div>
