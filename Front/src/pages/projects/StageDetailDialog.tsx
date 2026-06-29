@@ -1,5 +1,6 @@
 import { useState } from "react"
 import { toast } from "sonner"
+import { ChevronDown, Check } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import {
@@ -9,15 +10,20 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
 import StageStatusBadge from "@/components/StageStatusBadge"
-import type { StageDto } from "@/types/stage"
-import { useAddStageEvent } from "@/api/stages"
+import type { StageDto, StageStatus } from "@/types/stage"
+import { useAddStageEvent, useUpdateStageStatus } from "@/api/stages"
 import { useAuthStore } from "@/store/authStore"
 
-// Sanani o'zbekcha qisqa formatda ko'rsatadi (StageCard bilan izchil).
 function formatDate(value: string | null): string {
   if (!value) return "—"
   const date = new Date(value)
@@ -28,6 +34,13 @@ function formatDate(value: string | null): string {
     year: "numeric",
   })
 }
+
+const STATUS_OPTIONS: { value: StageStatus; label: string }[] = [
+  { value: "NotStarted", label: "Rejalashtirilgan" },
+  { value: "InProgress", label: "Jarayonda" },
+  { value: "Completed", label: "Tugallangan" },
+  { value: "Blocked", label: "To'xtatilgan" },
+]
 
 interface StageDetailDialogProps {
   open: boolean
@@ -46,6 +59,7 @@ export default function StageDetailDialog({
   const isSuperAdmin = role === "SuperAdmin"
 
   const addEvent = useAddStageEvent(projectId)
+  const updateStatus = useUpdateStageStatus(projectId)
 
   const [eventText, setEventText] = useState("")
   const [eventDate, setEventDate] = useState("")
@@ -54,8 +68,6 @@ export default function StageDetailDialog({
 
   const progress = Math.max(0, Math.min(100, stage.progress))
 
-  // Voqealar — sana bo'yicha kamayuvchi (eng yangisi tepada).
-  // Backend desc qaytarsa ham frontda xavfsiz qayta tartiblaymiz.
   const events = stage.events
     .slice()
     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
@@ -81,6 +93,28 @@ export default function StageDetailDialog({
             setEventDate("")
           } else {
             toast.error(data.errors[0] ?? "Voqea qo'shishda xatolik yuz berdi")
+          }
+        },
+        onError: () => toast.error("Serverga ulanishda xatolik yuz berdi"),
+      }
+    )
+  }
+
+  const handleStatusChange = (newStatus: StageStatus) => {
+    if (newStatus === stage.status) return
+    updateStatus.mutate(
+      { id: stage.id, body: { status: newStatus } },
+      {
+        onSuccess: (data) => {
+          if (data.succeeded) {
+            const label =
+              STATUS_OPTIONS.find((o) => o.value === newStatus)?.label ??
+              newStatus
+            toast.success(`Holat o'zgartirildi: ${label}`)
+          } else {
+            toast.error(
+              data.errors[0] ?? "Holatni o'zgartirishda xatolik yuz berdi"
+            )
           }
         },
         onError: () => toast.error("Serverga ulanishda xatolik yuz berdi"),
@@ -134,7 +168,7 @@ export default function StageDetailDialog({
             </div>
           )}
 
-          {/* Voqealar tarixi — timeline */}
+          {/* Voqealar tarixi */}
           <div className="space-y-3">
             <p className="text-sm font-medium">Voqealar tarixi</p>
 
@@ -146,7 +180,6 @@ export default function StageDetailDialog({
               <ol className="space-y-4 border-l border-border pl-5">
                 {events.map((event) => (
                   <li key={event.id} className="relative">
-                    {/* Timeline nuqtasi */}
                     <span className="absolute -left-[1.4375rem] top-1 h-2.5 w-2.5 rounded-full border-2 border-background bg-muted-foreground/40" />
                     <p className="text-xs text-muted-foreground tabular-nums">
                       {formatDate(event.date)}
@@ -158,7 +191,7 @@ export default function StageDetailDialog({
             )}
           </div>
 
-          {/* Voqea qo'shish formasi — faqat SuperAdmin uchun */}
+          {/* Voqea qo'shish — faqat SuperAdmin */}
           {isSuperAdmin && (
             <form
               onSubmit={handleAddEvent}
@@ -200,7 +233,40 @@ export default function StageDetailDialog({
           )}
         </div>
 
-        <DialogFooter>
+        <DialogFooter className="flex-row items-center justify-between gap-2 sm:justify-between">
+          {/* Bottom-left: status change dropdown (SuperAdmin only) */}
+          {isSuperAdmin ? (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={updateStatus.isPending}
+                  className="gap-1.5"
+                >
+                  <StageStatusBadge status={stage.status} />
+                  <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" side="top" className="w-44">
+                {STATUS_OPTIONS.map((option) => (
+                  <DropdownMenuItem
+                    key={option.value}
+                    onSelect={() => handleStatusChange(option.value)}
+                    className="flex items-center justify-between gap-2"
+                  >
+                    <span>{option.label}</span>
+                    {stage.status === option.value && (
+                      <Check className="h-3.5 w-3.5 text-primary" />
+                    )}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : (
+            <div />
+          )}
+
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Yopish
           </Button>
