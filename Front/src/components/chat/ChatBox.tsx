@@ -316,7 +316,7 @@ export default function ChatBox({
   const canSend = Boolean((content.trim() || attached) && !sendMutation.isPending)
 
   return (
-    <div className={cn("flex flex-col bg-background", className)}>
+    <div className={cn("flex flex-col bg-background overflow-hidden", className)}>
       {/* Pinned banner */}
       {pinnedCount > 0 && (
         <div className="flex items-center gap-2 border-b bg-amber-50/60 px-4 py-1.5 text-xs text-amber-700 dark:bg-amber-900/20 dark:text-amber-400">
@@ -326,7 +326,7 @@ export default function ChatBox({
       )}
 
       {/* Messages area */}
-      <div className="flex-1 overflow-y-auto px-4 py-3 space-y-1">
+      <div className="flex-1 min-h-0 overflow-y-auto px-4 py-3 space-y-3">
         {isLoading && <ChatSkeleton />}
         {!isLoading && isError && (
           <ErrorState
@@ -346,7 +346,7 @@ export default function ChatBox({
           <div
             key={`${group.senderId}-${gi}`}
             className={cn(
-              "flex flex-col gap-0.5",
+              "flex w-full flex-col gap-0.5",
               group.isOwn ? "items-end" : "items-start"
             )}
           >
@@ -361,7 +361,7 @@ export default function ChatBox({
               const parsed = parseFile(message.content)
 
               return (
-                <div key={message.id} className="relative group/bubble">
+                <div key={message.id} className="relative group/bubble max-w-[70%]">
                   <BubbleMenu
                     message={message}
                     isOwn={group.isOwn}
@@ -410,7 +410,7 @@ export default function ChatBox({
                   ) : (
                     <div
                       className={cn(
-                        "relative max-w-[70%] break-words",
+                        "relative w-full break-words",
                         group.isOwn
                           ? cn("rounded-[14px] rounded-br-[4px]", !isLast && "rounded-br-[14px]")
                           : cn("rounded-[14px] rounded-bl-[4px]", !isLast && "rounded-bl-[14px]"),
