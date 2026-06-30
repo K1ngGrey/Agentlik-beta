@@ -1,6 +1,18 @@
 import { useEffect, useRef, useState } from "react"
 import type { UseMutationResult, UseQueryResult } from "@tanstack/react-query"
-import { MessagesSquare, Send, Paperclip, Smile, X, FileText } from "lucide-react"
+import {
+  MessagesSquare,
+  Send,
+  Paperclip,
+  Smile,
+  X,
+  FileText,
+  Pin,
+  PinOff,
+  Pencil,
+  Trash2,
+  Check,
+} from "lucide-react"
 import { toast } from "sonner"
 
 import { Skeleton } from "@/components/ui/skeleton"
@@ -18,10 +30,15 @@ import type { ApiResult } from "@/types/api"
 import type { ChatMessageDto } from "@/types/chat"
 
 interface ChatBoxProps {
-  /** Already-called query result — do NOT pass a hook factory, call the hook in the parent. */
   messagesQuery: UseQueryResult<ApiResult<ChatMessageDto[]>>
-  /** Already-called mutation result — same rule. */
   sendMutation: UseMutationResult<ApiResult<ChatMessageDto>, unknown, string>
+  editMutation: UseMutationResult<
+    ApiResult<ChatMessageDto>,
+    unknown,
+    { id: string; content: string }
+  >
+  deleteMutation: UseMutationResult<ApiResult<boolean>, unknown, string>
+  pinMutation: UseMutationResult<ApiResult<ChatMessageDto>, unknown, string>
   className?: string
 }
 
@@ -55,12 +72,7 @@ function groupMessages(
     if (last && last.senderId === msg.senderId) {
       last.messages.push(msg)
     } else {
-      groups.push({
-        senderId: msg.senderId,
-        senderName: msg.senderName,
-        isOwn,
-        messages: [msg],
-      })
+      groups.push({ senderId: msg.senderId, senderName: msg.senderName, isOwn, messages: [msg] })
     }
   }
   return groups
@@ -71,29 +83,109 @@ interface AttachedFile {
   previewUrl: string | null
 }
 
-function parseMessage(msg: string) {
+function parseFile(msg: string) {
   const m = msg.match(/^\[Fayl: (.+?) \((.+?)\)\]([\s\S]*)$/)
   if (m) return { fileName: m[1], fileSize: m[2], text: m[3].trim() }
   return null
 }
 
+// Bubble context menu (appears on hover)
+interface BubbleMenuProps {
+  message: ChatMessageDto
+  isOwn: boolean
+  isSuperAdmin: boolean
+  onEdit: () => void
+  onDelete: () => void
+  onPin: () => void
+  isPending: boolean
+}
+
+function BubbleMenu({ message, isOwn, isSuperAdmin, onEdit, onDelete, onPin, isPending }: BubbleMenuProps) {
+  const canEdit = isOwn
+  const canDelete = isOwn || isSuperAdmin
+  const canPin = isOwn || isSuperAdmin
+
+  if (!canEdit && !canDelete && !canPin) return null
+
+  return (
+    <div
+      className={cn(
+        "absolute -top-8 flex items-center gap-0.5 rounded-lg border bg-popover px-1 py-0.5 shadow-md",
+        "opacity-0 group-hover/bubble:opacity-100 transition-opacity duration-100 pointer-events-none group-hover/bubble:pointer-events-auto z-10",
+        isOwn ? "right-0" : "left-0"
+      )}
+    >
+      {canPin && (
+        <button
+          type="button"
+          disabled={isPending}
+          onClick={onPin}
+          className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
+          title={message.isPinned ? "Mahkamlashni bekor qilish" : "Mahkamlash"}
+        >
+          {message.isPinned ? <PinOff className="h-3.5 w-3.5" /> : <Pin className="h-3.5 w-3.5" />}
+        </button>
+      )}
+      {canEdit && (
+        <button
+          type="button"
+          disabled={isPending}
+          onClick={onEdit}
+          className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
+          title="Tahrirlash"
+        >
+          <Pencil className="h-3.5 w-3.5" />
+        </button>
+      )}
+      {canDelete && (
+        <button
+          type="button"
+          disabled={isPending}
+          onClick={onDelete}
+          className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+          title="O'chirish"
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+        </button>
+      )}
+    </div>
+  )
+}
+
 export default function ChatBox({
   messagesQuery,
   sendMutation,
+  editMutation,
+  deleteMutation,
+  pinMutation,
   className,
 }: ChatBoxProps) {
-  const currentUserId = useAuthStore((s) => s.user?.id)
+  const user = useAuthStore((s) => s.user)
+  const currentUserId = user?.id
+  const isSuperAdmin = user?.role === "SuperAdmin"
+
   const { data, isLoading, isError, refetch } = messagesQuery
 
   const [content, setContent] = useState("")
   const [attached, setAttached] = useState<AttachedFile | null>(null)
   const [emojiOpen, setEmojiOpen] = useState(false)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editContent, setEditContent] = useState("")
+
   const bottomRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const editTextareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  const messages = data?.succeeded ? (data.result ?? []) : []
+  const rawMessages = data?.succeeded ? (data.result ?? []) : []
+  // Pinned first, then chronological
+  const messages = [...rawMessages].sort((a, b) => {
+    if (a.isPinned !== b.isPinned) return a.isPinned ? -1 : 1
+    return new Date(a.sentAt).getTime() - new Date(b.sentAt).getTime()
+  })
   const groups = groupMessages(messages, currentUserId)
+
+  const pinnedCount = rawMessages.filter((m) => m.isPinned).length
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" })
@@ -105,6 +197,12 @@ export default function ChatBox({
     el.style.height = "auto"
     el.style.height = `${Math.min(el.scrollHeight, 120)}px`
   }, [content])
+
+  useEffect(() => {
+    if (editingId) {
+      editTextareaRef.current?.focus()
+    }
+  }, [editingId])
 
   const handleSend = () => {
     const trimmed = content.trim()
@@ -125,7 +223,7 @@ export default function ChatBox({
           toast.error(result.errors[0] ?? "Xabar yuborishda xatolik")
         }
       },
-      onError: () => toast.error("Serverga ulanishda xatolik yuz berdi"),
+      onError: () => toast.error("Serverga ulanishda xatolik"),
     })
   }
 
@@ -139,8 +237,7 @@ export default function ChatBox({
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
-    const isImage = file.type.startsWith("image/")
-    const previewUrl = isImage ? URL.createObjectURL(file) : null
+    const previewUrl = file.type.startsWith("image/") ? URL.createObjectURL(file) : null
     setAttached({ file, previewUrl })
     e.target.value = ""
   }
@@ -162,10 +259,72 @@ export default function ChatBox({
     setEmojiOpen(false)
   }
 
+  const startEdit = (msg: ChatMessageDto) => {
+    setEditingId(msg.id)
+    setEditContent(msg.content)
+  }
+
+  const cancelEdit = () => {
+    setEditingId(null)
+    setEditContent("")
+  }
+
+  const submitEdit = (id: string) => {
+    const trimmed = editContent.trim()
+    if (!trimmed || editMutation.isPending) return
+
+    editMutation.mutate(
+      { id, content: trimmed },
+      {
+        onSuccess: (result) => {
+          if (result.succeeded) {
+            cancelEdit()
+          } else {
+            toast.error(result.errors[0] ?? "Tahrirlashda xatolik")
+          }
+        },
+        onError: () => toast.error("Serverga ulanishda xatolik"),
+      }
+    )
+  }
+
+  const handleDelete = (id: string) => {
+    deleteMutation.mutate(id, {
+      onSuccess: (result) => {
+        if (!result.succeeded) {
+          toast.error(result.errors[0] ?? "O'chirishda xatolik")
+        }
+      },
+      onError: () => toast.error("Serverga ulanishda xatolik"),
+    })
+  }
+
+  const handlePin = (id: string) => {
+    pinMutation.mutate(id, {
+      onSuccess: (result) => {
+        if (!result.succeeded) {
+          toast.error(result.errors[0] ?? "Mahkamlashda xatolik")
+        }
+      },
+      onError: () => toast.error("Serverga ulanishda xatolik"),
+    })
+  }
+
+  const actionPending =
+    editMutation.isPending || deleteMutation.isPending || pinMutation.isPending
+
   const canSend = Boolean((content.trim() || attached) && !sendMutation.isPending)
 
   return (
     <div className={cn("flex flex-col bg-background", className)}>
+      {/* Pinned banner */}
+      {pinnedCount > 0 && (
+        <div className="flex items-center gap-2 border-b bg-amber-50/60 px-4 py-1.5 text-xs text-amber-700 dark:bg-amber-900/20 dark:text-amber-400">
+          <Pin className="h-3 w-3 shrink-0" />
+          <span>{pinnedCount} ta mahkamlangan xabar</span>
+        </div>
+      )}
+
       {/* Messages area */}
       <div className="flex-1 overflow-y-auto px-4 py-3 space-y-1">
         {isLoading && <ChatSkeleton />}
@@ -198,71 +357,107 @@ export default function ChatBox({
             )}
             {group.messages.map((message, mi) => {
               const isLast = mi === group.messages.length - 1
-              const parsed = parseMessage(message.content)
+              const isEditing = editingId === message.id
+              const parsed = parseFile(message.content)
+
               return (
-                <div
-                  key={message.id}
-                  className={cn(
-                    "relative max-w-[70%] break-words",
-                    group.isOwn
-                      ? cn(
-                          "rounded-[14px] rounded-br-[4px]",
-                          !isLast && "rounded-br-[14px]"
-                        )
-                      : cn(
-                          "rounded-[14px] rounded-bl-[4px]",
-                          !isLast && "rounded-bl-[14px]"
-                        ),
-                    group.isOwn
-                      ? "bg-primary text-primary-foreground"
-                      : "bg-muted text-foreground"
-                  )}
-                  style={{
-                    paddingTop: 7,
-                    paddingBottom: 7,
-                    paddingLeft: 12,
-                    paddingRight: 12,
-                  }}
-                >
-                  {parsed ? (
-                    <div className="space-y-1.5">
-                      <div
-                        className={cn(
-                          "flex items-center gap-2 rounded-lg p-2",
-                          group.isOwn
-                            ? "bg-primary-foreground/10"
-                            : "bg-background/60"
-                        )}
-                      >
-                        <FileText className="h-6 w-6 shrink-0 opacity-70" />
-                        <div className="min-w-0">
-                          <p className="truncate text-sm font-medium leading-tight">
-                            {parsed.fileName}
-                          </p>
-                          <p className="text-xs opacity-60">{parsed.fileSize}</p>
-                        </div>
+                <div key={message.id} className="relative group/bubble">
+                  <BubbleMenu
+                    message={message}
+                    isOwn={group.isOwn}
+                    isSuperAdmin={isSuperAdmin}
+                    onEdit={() => startEdit(message)}
+                    onDelete={() => handleDelete(message.id)}
+                    onPin={() => handlePin(message.id)}
+                    isPending={actionPending}
+                  />
+
+                  {isEditing ? (
+                    /* Inline edit mode */
+                    <div className="flex min-w-[200px] max-w-[70%] flex-col gap-1 rounded-xl border bg-background p-2 shadow-sm">
+                      <textarea
+                        ref={editTextareaRef}
+                        value={editContent}
+                        onChange={(e) => setEditContent(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" && !e.shiftKey) {
+                            e.preventDefault()
+                            submitEdit(message.id)
+                          }
+                          if (e.key === "Escape") cancelEdit()
+                        }}
+                        rows={2}
+                        className="w-full resize-none rounded bg-transparent text-sm focus:outline-none"
+                      />
+                      <div className="flex justify-end gap-1">
+                        <button
+                          type="button"
+                          onClick={cancelEdit}
+                          className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:text-foreground"
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => submitEdit(message.id)}
+                          disabled={!editContent.trim() || editMutation.isPending}
+                          className="flex h-5 w-5 items-center justify-center rounded text-primary hover:opacity-80 disabled:opacity-40"
+                        >
+                          <Check className="h-3.5 w-3.5" />
+                        </button>
                       </div>
-                      {parsed.text && (
-                        <p className="whitespace-pre-wrap text-sm leading-snug">
-                          {parsed.text}
-                        </p>
-                      )}
                     </div>
                   ) : (
-                    <p className="whitespace-pre-wrap text-sm leading-snug">
-                      {message.content}
-                    </p>
+                    <div
+                      className={cn(
+                        "relative max-w-[70%] break-words",
+                        group.isOwn
+                          ? cn("rounded-[14px] rounded-br-[4px]", !isLast && "rounded-br-[14px]")
+                          : cn("rounded-[14px] rounded-bl-[4px]", !isLast && "rounded-bl-[14px]"),
+                        group.isOwn
+                          ? "bg-primary text-primary-foreground"
+                          : "bg-muted text-foreground",
+                        message.isPinned && "ring-1 ring-amber-400/60"
+                      )}
+                      style={{ paddingTop: 7, paddingBottom: 7, paddingLeft: 12, paddingRight: 12 }}
+                    >
+                      {message.isPinned && (
+                        <Pin className="mb-0.5 inline h-2.5 w-2.5 text-amber-500 mr-1" />
+                      )}
+
+                      {parsed ? (
+                        <div className="space-y-1.5">
+                          <div
+                            className={cn(
+                              "flex items-center gap-2 rounded-lg p-2",
+                              group.isOwn ? "bg-primary-foreground/10" : "bg-background/60"
+                            )}
+                          >
+                            <FileText className="h-6 w-6 shrink-0 opacity-70" />
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-medium leading-tight">{parsed.fileName}</p>
+                              <p className="text-xs opacity-60">{parsed.fileSize}</p>
+                            </div>
+                          </div>
+                          {parsed.text && (
+                            <p className="whitespace-pre-wrap text-sm leading-snug">{parsed.text}</p>
+                          )}
+                        </div>
+                      ) : (
+                        <p className="whitespace-pre-wrap text-sm leading-snug">{message.content}</p>
+                      )}
+
+                      <span
+                        className={cn(
+                          "ml-3 mt-0.5 inline-block select-none whitespace-nowrap align-bottom text-[10px] leading-none float-right",
+                          group.isOwn ? "text-primary-foreground/60" : "text-muted-foreground"
+                        )}
+                      >
+                        {message.isEdited && <span className="mr-1 italic">tahrirlangan</span>}
+                        {formatTime(message.sentAt)}
+                      </span>
+                    </div>
                   )}
-                  <span
-                    className={cn(
-                      "ml-3 mt-0.5 inline-block select-none whitespace-nowrap align-bottom text-[10px] leading-none float-right",
-                      group.isOwn
-                        ? "text-primary-foreground/60"
-                        : "text-muted-foreground"
-                    )}
-                  >
-                    {formatTime(message.sentAt)}
-                  </span>
                 </div>
               )
             })}
@@ -275,19 +470,13 @@ export default function ChatBox({
       {attached && (
         <div className="mx-4 mb-1 flex items-center gap-2 rounded-lg border bg-muted/40 px-3 py-2">
           {attached.previewUrl ? (
-            <img
-              src={attached.previewUrl}
-              alt=""
-              className="h-10 w-10 rounded object-cover"
-            />
+            <img src={attached.previewUrl} alt="" className="h-10 w-10 rounded object-cover" />
           ) : (
             <FileText className="h-8 w-8 text-muted-foreground" />
           )}
           <div className="min-w-0 flex-1">
             <p className="truncate text-xs font-medium">{attached.file.name}</p>
-            <p className="text-xs text-muted-foreground">
-              {formatFileSize(attached.file.size)}
-            </p>
+            <p className="text-xs text-muted-foreground">{formatFileSize(attached.file.size)}</p>
           </div>
           <button
             type="button"
@@ -378,13 +567,7 @@ function ChatSkeleton() {
   return (
     <div className="space-y-2">
       {items.map((item, i) => (
-        <div
-          key={i}
-          className={cn(
-            "flex",
-            item.side === "end" ? "justify-end" : "justify-start"
-          )}
-        >
+        <div key={i} className={cn("flex", item.side === "end" ? "justify-end" : "justify-start")}>
           <Skeleton className={cn("h-9 rounded-2xl", item.w)} />
         </div>
       ))}

@@ -2,18 +2,20 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 
 import { apiClient } from "@/lib/apiClient"
 import type { ApiResult } from "@/types/api"
-import type { ChatMessageDto, SendMessageRequest } from "@/types/chat"
+import type {
+  ChatMessageDto,
+  EditMessageRequest,
+  SendMessageRequest,
+} from "@/types/chat"
 
-// Polling oralig'i — yangi xabarlarni avtomatik tortib olish uchun (4s).
 const POLL_INTERVAL_MS = 4000
 
-// TanStack Query kesh kalitlari — global va har loyiha chati alohida.
 export const chatKeys = {
   global: ["chat", "global"] as const,
   project: (projectId: string) => ["chat", "project", projectId] as const,
 }
 
-// --- Typed API funksiyalari ---
+// --- API functions ---
 
 export function getGlobalMessages(): Promise<ApiResult<ChatMessageDto[]>> {
   return apiClient.get<ChatMessageDto[]>("/api/chats/global")
@@ -41,9 +43,27 @@ export function sendProjectMessage(
   )
 }
 
-// --- TanStack Query hooklar ---
+export function editMessage(
+  messageId: string,
+  body: EditMessageRequest
+): Promise<ApiResult<ChatMessageDto>> {
+  return apiClient.put<ChatMessageDto>(`/api/messages/${messageId}`, body)
+}
 
-// Global chat — har ~4s da yangilanadi (polling).
+export function deleteMessage(
+  messageId: string
+): Promise<ApiResult<boolean>> {
+  return apiClient.del<boolean>(`/api/messages/${messageId}`)
+}
+
+export function togglePinMessage(
+  messageId: string
+): Promise<ApiResult<ChatMessageDto>> {
+  return apiClient.patch<ChatMessageDto>(`/api/messages/${messageId}/pin`, {})
+}
+
+// --- TanStack Query hooks ---
+
 export function useGlobalMessages() {
   return useQuery({
     queryKey: chatKeys.global,
@@ -54,16 +74,12 @@ export function useGlobalMessages() {
 
 export function useSendGlobalMessage() {
   const queryClient = useQueryClient()
-
   return useMutation({
     mutationFn: (content: string) => sendGlobalMessage({ content }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: chatKeys.global })
-    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: chatKeys.global }),
   })
 }
 
-// Loyiha chati — har ~4s da yangilanadi (polling).
 export function useProjectMessages(projectId: string) {
   return useQuery({
     queryKey: chatKeys.project(projectId),
@@ -75,11 +91,34 @@ export function useProjectMessages(projectId: string) {
 
 export function useSendProjectMessage(projectId: string) {
   const queryClient = useQueryClient()
-
   return useMutation({
     mutationFn: (content: string) => sendProjectMessage(projectId, { content }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: chatKeys.project(projectId) })
-    },
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: chatKeys.project(projectId) }),
+  })
+}
+
+export function useEditMessage(chatKey: readonly string[]) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, content }: { id: string; content: string }) =>
+      editMessage(id, { content }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: chatKey }),
+  })
+}
+
+export function useDeleteMessage(chatKey: readonly string[]) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => deleteMessage(id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: chatKey }),
+  })
+}
+
+export function useTogglePinMessage(chatKey: readonly string[]) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => togglePinMessage(id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: chatKey }),
   })
 }

@@ -7,12 +7,21 @@ import {
 } from "@/components/ui/card"
 import ChatBox from "@/components/chat/ChatBox"
 import PageHeader from "@/components/PageHeader"
-import { useGlobalMessages, useSendGlobalMessage } from "@/api/chat"
+import {
+  useGlobalMessages,
+  useSendGlobalMessage,
+  useEditMessage,
+  useDeleteMessage,
+  useTogglePinMessage,
+  chatKeys,
+} from "@/api/chat"
 
 export default function GlobalChatPage() {
-  // Hooks called at the top level — results passed directly as props
   const messagesQuery = useGlobalMessages()
   const sendMutation = useSendGlobalMessage()
+  const editMutation = useEditMessage(chatKeys.global)
+  const deleteMutation = useDeleteMessage(chatKeys.global)
+  const pinMutation = useTogglePinMessage(chatKeys.global)
 
   return (
     <div className="space-y-6">
@@ -33,6 +42,9 @@ export default function GlobalChatPage() {
             className="h-[32rem]"
             messagesQuery={messagesQuery}
             sendMutation={sendMutation}
+            editMutation={editMutation}
+            deleteMutation={deleteMutation}
+            pinMutation={pinMutation}
           />
         </CardContent>
       </Card>

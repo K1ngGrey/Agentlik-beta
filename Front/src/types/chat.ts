@@ -1,4 +1,3 @@
-// Global va loyiha chatlaridagi xabar.
 export interface ChatMessageDto {
   id: string
   chatId: string
@@ -6,9 +5,15 @@ export interface ChatMessageDto {
   senderName: string
   content: string
   sentAt: string
+  isPinned: boolean
+  isEdited: boolean
+  editedAt: string | null
 }
 
-// Xabar yuborish so'rovi (global va loyiha chati uchun bir xil).
 export interface SendMessageRequest {
+  content: string
+}
+
+export interface EditMessageRequest {
   content: string
 }

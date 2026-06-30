@@ -16,7 +16,14 @@ import ProjectStages from "@/pages/projects/ProjectStages"
 import ProjectMembersSidebar from "@/pages/projects/ProjectMembersSidebar"
 import ChatBox from "@/components/chat/ChatBox"
 import { useProject } from "@/api/projects"
-import { useProjectMessages, useSendProjectMessage } from "@/api/chat"
+import {
+  useProjectMessages,
+  useSendProjectMessage,
+  useEditMessage,
+  useDeleteMessage,
+  useTogglePinMessage,
+  chatKeys,
+} from "@/api/chat"
 
 export default function ProjectDetailPage() {
   const { id = "" } = useParams()
@@ -28,6 +35,9 @@ export default function ProjectDetailPage() {
   // Hooks called unconditionally at the top level — never inside callbacks or conditions
   const messagesQuery = useProjectMessages(id)
   const sendMutation = useSendProjectMessage(id)
+  const editMutation = useEditMessage(chatKeys.project(id))
+  const deleteMutation = useDeleteMessage(chatKeys.project(id))
+  const pinMutation = useTogglePinMessage(chatKeys.project(id))
 
   return (
     <div className="space-y-6">
@@ -83,6 +93,9 @@ export default function ProjectDetailPage() {
                   className="h-full rounded-none border-0"
                   messagesQuery={messagesQuery}
                   sendMutation={sendMutation}
+                  editMutation={editMutation}
+                  deleteMutation={deleteMutation}
+                  pinMutation={pinMutation}
                 />
               </div>
             </CardContent>
