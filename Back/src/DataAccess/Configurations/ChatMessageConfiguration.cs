@@ -12,12 +12,6 @@ public class ChatMessageConfiguration : IEntityTypeConfiguration<ChatMessage>
 
         builder.HasKey(m => m.Id);
 
-        builder.Property(m => m.ChatId)
-            .IsRequired();
-
-        builder.Property(m => m.SenderId)
-            .IsRequired();
-
         builder.Property(m => m.Content)
             .IsRequired()
             .HasMaxLength(4000);
@@ -25,9 +19,14 @@ public class ChatMessageConfiguration : IEntityTypeConfiguration<ChatMessage>
         builder.Property(m => m.SentAt)
             .IsRequired();
 
-        builder.HasOne(m => m.Sender)
-            .WithMany()
-            .HasForeignKey(m => m.SenderId)
-            .OnDelete(DeleteBehavior.Restrict);
+        builder.Property(m => m.IsPinned)
+            .IsRequired()
+            .HasDefaultValue(false);
+
+        builder.Property(m => m.IsEdited)
+            .IsRequired()
+            .HasDefaultValue(false);
+
+        builder.Property(m => m.EditedAt);
     }
 }
