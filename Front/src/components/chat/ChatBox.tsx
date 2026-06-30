@@ -410,7 +410,7 @@ export default function ChatBox({
                   ) : (
                     <div
                       className={cn(
-                        "relative w-full break-words",
+                        "relative w-full",
                         group.isOwn
                           ? cn("rounded-[14px] rounded-br-[4px]", !isLast && "rounded-br-[14px]")
                           : cn("rounded-[14px] rounded-bl-[4px]", !isLast && "rounded-bl-[14px]"),
@@ -419,14 +419,14 @@ export default function ChatBox({
                           : "bg-muted text-foreground",
                         message.isPinned && "ring-1 ring-amber-400/60"
                       )}
-                      style={{ paddingTop: 7, paddingBottom: 7, paddingLeft: 12, paddingRight: 12 }}
+                      style={{ paddingTop: 7, paddingBottom: 4, paddingLeft: 12, paddingRight: 12 }}
                     >
                       {message.isPinned && (
                         <Pin className="mb-0.5 inline h-2.5 w-2.5 text-amber-500 mr-1" />
                       )}
 
                       {parsed ? (
-                        <div className="space-y-1.5">
+                        <div className="space-y-1.5 mb-1">
                           <div
                             className={cn(
                               "flex items-center gap-2 rounded-lg p-2",
@@ -440,22 +440,26 @@ export default function ChatBox({
                             </div>
                           </div>
                           {parsed.text && (
-                            <p className="whitespace-pre-wrap text-sm leading-snug">{parsed.text}</p>
+                            <p className="whitespace-pre-wrap text-sm leading-snug break-words">{parsed.text}</p>
                           )}
                         </div>
                       ) : (
-                        <p className="whitespace-pre-wrap text-sm leading-snug">{message.content}</p>
+                        <p className="whitespace-pre-wrap text-sm leading-snug break-words">{message.content}</p>
                       )}
 
-                      <span
+                      <div
                         className={cn(
-                          "ml-3 mt-0.5 inline-block select-none whitespace-nowrap align-bottom text-[10px] leading-none float-right",
-                          group.isOwn ? "text-primary-foreground/60" : "text-muted-foreground"
+                          "flex items-center justify-end gap-1 select-none",
+                          group.isOwn ? "text-primary-foreground/50" : "text-muted-foreground"
                         )}
                       >
-                        {message.isEdited && <span className="mr-1 italic">tahrirlangan</span>}
-                        {formatTime(message.sentAt)}
-                      </span>
+                        {message.isEdited && (
+                          <span className="text-[10px] italic leading-none">tahrirlangan</span>
+                        )}
+                        <span className="text-[10px] leading-none tabular-nums">
+                          {formatTime(message.sentAt)}
+                        </span>
+                      </div>
                     </div>
                   )}
                 </div>
