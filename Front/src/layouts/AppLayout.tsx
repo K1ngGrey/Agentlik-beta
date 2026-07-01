@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils"
 import type { Role } from "@/types/auth"
 import { useAuthStore } from "@/store/authStore"
 import { useLogout } from "@/api/auth"
+import { useUnreadCounts } from "@/api/chat"
 import { Button } from "@/components/ui/button"
 import ThemeToggle from "@/components/ThemeToggle"
 import {
@@ -27,7 +28,6 @@ import {
 
 const SYSTEM_NAME = "Mudofaa Sanoati Agentligi"
 
-// Rol nomlarini foydalanuvchiga ko'rsatish uchun o'zbekcha matnlar.
 const ROLE_LABELS: Record<Role, string> = {
   SuperAdmin: "Bosh administrator",
   Rahbar: "Rahbar",
@@ -38,41 +38,55 @@ interface NavItem {
   label: string
   to: string
   icon: LucideIcon
-  // Berilmagan bo'lsa — barcha rollar uchun ko'rinadi.
   roles?: Role[]
+  badgeKey?: "global" | "projects"
 }
 
 const NAV_ITEMS: NavItem[] = [
   { label: "Boshqaruv paneli", to: "/", icon: LayoutDashboard },
-  { label: "Loyihalar", to: "/projects", icon: FolderKanban },
-  { label: "Umumiy chat", to: "/chat", icon: MessagesSquare },
+  { label: "Loyihalar", to: "/projects", icon: FolderKanban, badgeKey: "projects" },
+  { label: "Umumiy chat", to: "/chat", icon: MessagesSquare, badgeKey: "global" },
   { label: "Foydalanuvchilar", to: "/users", icon: Users, roles: ["SuperAdmin"] },
 ]
 
-// Joriy rol uchun ruxsat etilgan menyu elementlarini qaytaradi.
 function visibleNavItems(role: Role | undefined): NavItem[] {
   return NAV_ITEMS.filter(
     (item) => !item.roles || (role && item.roles.includes(role))
   )
 }
 
-interface SidebarNavProps {
-  items: NavItem[]
-  // Mobil sheet'da bosilganda drawer'ni yopish uchun.
-  onNavigate?: () => void
+function UnreadBadge({ count }: { count: number }) {
+  if (count <= 0) return null
+  return (
+    <span className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-destructive px-1 text-[11px] font-semibold leading-none text-destructive-foreground">
+      {count > 99 ? "99+" : count}
+    </span>
+  )
 }
 
-// Sidebar menyu ro'yxati (desktop va mobil sheet'da qayta ishlatiladi).
-function SidebarNav({ items, onNavigate }: SidebarNavProps) {
+interface SidebarNavProps {
+  items: NavItem[]
+  onNavigate?: () => void
+  globalUnread: number
+  projectsUnread: number
+}
+
+function SidebarNav({ items, onNavigate, globalUnread, projectsUnread }: SidebarNavProps) {
   return (
     <nav className="flex flex-col gap-1 px-3 py-4">
       {items.map((item) => {
         const Icon = item.icon
+        const badgeCount =
+          item.badgeKey === "global"
+            ? globalUnread
+            : item.badgeKey === "projects"
+            ? projectsUnread
+            : 0
+
         return (
           <NavLink
             key={item.to}
             to={item.to}
-            // "/" boshqa route'larda ham aktiv ko'rinmasligi uchun end.
             end={item.to === "/"}
             onClick={onNavigate}
             className={({ isActive }) =>
@@ -86,6 +100,7 @@ function SidebarNav({ items, onNavigate }: SidebarNavProps) {
           >
             <Icon className="h-4 w-4 shrink-0" />
             {item.label}
+            <UnreadBadge count={badgeCount} />
           </NavLink>
         )
       })}
@@ -93,12 +108,19 @@ function SidebarNav({ items, onNavigate }: SidebarNavProps) {
   )
 }
 
-// Login'dan keyingi asosiy ko'rinish: chapda sidebar, tepada header, o'ngda sahifa.
 export default function AppLayout() {
   const user = useAuthStore((s) => s.user)
   const navigate = useNavigate()
   const { mutate: logout, isPending: isLoggingOut } = useLogout()
   const [mobileOpen, setMobileOpen] = useState(false)
+
+  const { data: unreadData } = useUnreadCounts()
+  const unreadCounts = unreadData?.succeeded ? unreadData.result : null
+
+  const globalUnread = unreadCounts?.globalChatCount ?? 0
+  const projectsUnread = unreadCounts
+    ? Object.values(unreadCounts.projectChatCounts).reduce((sum, n) => sum + n, 0)
+    : 0
 
   const items = visibleNavItems(user?.role)
 
@@ -120,14 +142,17 @@ export default function AppLayout() {
             {SYSTEM_NAME}
           </span>
         </div>
-        <SidebarNav items={items} />
+        <SidebarNav
+          items={items}
+          globalUnread={globalUnread}
+          projectsUnread={projectsUnread}
+        />
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
         {/* Header */}
         <header className="flex h-16 shrink-0 items-center justify-between border-b bg-card px-4 md:px-6">
           <div className="flex items-center gap-3">
-            {/* Mobil menyu tugmasi (drawer) */}
             <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
               <SheetTrigger asChild>
                 <Button
@@ -151,6 +176,8 @@ export default function AppLayout() {
                 <SidebarNav
                   items={items}
                   onNavigate={() => setMobileOpen(false)}
+                  globalUnread={globalUnread}
+                  projectsUnread={projectsUnread}
                 />
               </SheetContent>
             </Sheet>
@@ -160,7 +187,6 @@ export default function AppLayout() {
             </span>
           </div>
 
-          {/* O'ngda: mavzu almashtirgich + foydalanuvchi ismi + dropdown */}
           <div className="flex items-center gap-1.5">
             <ThemeToggle />
             {user && (

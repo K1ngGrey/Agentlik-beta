@@ -23,6 +23,8 @@ public class DatabaseContext : DbContext
 
     public DbSet<ChatMessage> ChatMessages => Set<ChatMessage>();
 
+    public DbSet<ChatReadReceipt> ChatReadReceipts => Set<ChatReadReceipt>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);

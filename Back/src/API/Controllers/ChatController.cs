@@ -89,4 +89,26 @@ public class ChatController : ApiControllerBase
         var result = await _chatService.TogglePinAsync(messageId, userId.Value, isSuperAdmin);
         return ToActionResult(result);
     }
+
+    [HttpPost("api/chats/{chatId:guid}/read")]
+    public async Task<IActionResult> MarkAsRead(Guid chatId)
+    {
+        var userId = _currentUserService.UserId;
+        if (userId is null)
+            return ToActionResult(ApiResult<bool>.Failure(["Foydalanuvchi aniqlanmadi."], 401));
+
+        var result = await _chatService.MarkChatAsReadAsync(chatId, userId.Value);
+        return ToActionResult(result);
+    }
+
+    [HttpGet("api/chats/unread-counts")]
+    public async Task<IActionResult> GetUnreadCounts()
+    {
+        var userId = _currentUserService.UserId;
+        if (userId is null)
+            return ToActionResult(ApiResult<UnreadCountsDto>.Failure(["Foydalanuvchi aniqlanmadi."], 401));
+
+        var result = await _chatService.GetUnreadCountsAsync(userId.Value);
+        return ToActionResult(result);
+    }
 }

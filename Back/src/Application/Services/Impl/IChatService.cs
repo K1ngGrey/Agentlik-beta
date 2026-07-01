@@ -18,4 +18,8 @@ public interface IChatService
     Task<ApiResult<bool>> DeleteMessageAsync(Guid messageId, Guid requesterId, bool isSuperAdmin);
 
     Task<ApiResult<ChatMessageDto>> TogglePinAsync(Guid messageId, Guid requesterId, bool isSuperAdmin);
+
+    Task<ApiResult<bool>> MarkChatAsReadAsync(Guid chatId, Guid userId);
+
+    Task<ApiResult<UnreadCountsDto>> GetUnreadCountsAsync(Guid userId);
 }

@@ -6,13 +6,16 @@ import type {
   ChatMessageDto,
   EditMessageRequest,
   SendMessageRequest,
+  UnreadCountsDto,
 } from "@/types/chat"
 
 const POLL_INTERVAL_MS = 4000
+const UNREAD_POLL_INTERVAL_MS = 30_000
 
 export const chatKeys = {
   global: ["chat", "global"] as const,
   project: (projectId: string) => ["chat", "project", projectId] as const,
+  unreadCounts: ["chat", "unread-counts"] as const,
 }
 
 // --- API functions ---
@@ -60,6 +63,14 @@ export function togglePinMessage(
   messageId: string
 ): Promise<ApiResult<ChatMessageDto>> {
   return apiClient.patch<ChatMessageDto>(`/api/messages/${messageId}/pin`, {})
+}
+
+export function getUnreadCounts(): Promise<ApiResult<UnreadCountsDto>> {
+  return apiClient.get<UnreadCountsDto>("/api/chats/unread-counts")
+}
+
+export function markChatAsRead(chatId: string): Promise<ApiResult<boolean>> {
+  return apiClient.post<boolean>(`/api/chats/${chatId}/read`, {})
 }
 
 // --- TanStack Query hooks ---
@@ -120,5 +131,22 @@ export function useTogglePinMessage(chatKey: readonly string[]) {
   return useMutation({
     mutationFn: (id: string) => togglePinMessage(id),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: chatKey }),
+  })
+}
+
+export function useUnreadCounts() {
+  return useQuery({
+    queryKey: chatKeys.unreadCounts,
+    queryFn: getUnreadCounts,
+    refetchInterval: UNREAD_POLL_INTERVAL_MS,
+  })
+}
+
+export function useMarkChatAsRead() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (chatId: string) => markChatAsRead(chatId),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: chatKeys.unreadCounts }),
   })
 }

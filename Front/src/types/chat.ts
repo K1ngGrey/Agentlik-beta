@@ -17,3 +17,8 @@ export interface SendMessageRequest {
 export interface EditMessageRequest {
   content: string
 }
+
+export interface UnreadCountsDto {
+  globalChatCount: number
+  projectChatCounts: Record<string, number>
+}

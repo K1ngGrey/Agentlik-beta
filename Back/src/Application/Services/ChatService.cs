@@ -196,4 +196,68 @@ public class ChatService : IChatService
 
         return chat;
     }
+
+    public async Task<ApiResult<bool>> MarkChatAsReadAsync(Guid chatId, Guid userId)
+    {
+        var chat = await _context.Chats.FirstOrDefaultAsync(c => c.Id == chatId);
+        if (chat is null)
+            return ApiResult<bool>.Failure(["Chat topilmadi."], 404);
+
+        var receipt = await _context.ChatReadReceipts
+            .FirstOrDefaultAsync(r => r.UserId == userId && r.ChatId == chatId);
+
+        if (receipt is null)
+        {
+            receipt = new Core.Entities.ChatReadReceipt
+            {
+                UserId = userId,
+                ChatId = chatId,
+                LastReadAt = DateTime.UtcNow
+            };
+            _context.ChatReadReceipts.Add(receipt);
+        }
+        else
+        {
+            receipt.LastReadAt = DateTime.UtcNow;
+        }
+
+        await _context.SaveChangesAsync();
+        return ApiResult<bool>.Success(true);
+    }
+
+    public async Task<ApiResult<UnreadCountsDto>> GetUnreadCountsAsync(Guid userId)
+    {
+        var receipts = await _context.ChatReadReceipts
+            .Where(r => r.UserId == userId)
+            .ToDictionaryAsync(r => r.ChatId, r => r.LastReadAt);
+
+        var globalChat = await _context.Chats.FirstOrDefaultAsync(c => c.Type == ChatType.Global);
+        int globalCount = 0;
+        if (globalChat is not null)
+        {
+            var lastRead = receipts.GetValueOrDefault(globalChat.Id, DateTime.MinValue);
+            globalCount = await _context.ChatMessages
+                .CountAsync(m => m.ChatId == globalChat.Id && m.SentAt > lastRead && m.SenderId != userId);
+        }
+
+        var projectChats = await _context.Chats
+            .Where(c => c.Type == ChatType.Project && c.ProjectId != null)
+            .ToListAsync();
+
+        var projectChatCounts = new Dictionary<Guid, int>();
+        foreach (var pc in projectChats)
+        {
+            var lastRead = receipts.GetValueOrDefault(pc.Id, DateTime.MinValue);
+            var count = await _context.ChatMessages
+                .CountAsync(m => m.ChatId == pc.Id && m.SentAt > lastRead && m.SenderId != userId);
+            if (count > 0)
+                projectChatCounts[pc.ProjectId!.Value] = count;
+        }
+
+        return ApiResult<UnreadCountsDto>.Success(new UnreadCountsDto
+        {
+            GlobalChatCount = globalCount,
+            ProjectChatCounts = projectChatCounts
+        });
+    }
 }
