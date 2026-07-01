@@ -110,8 +110,12 @@ function BubbleMenu({ message, isOwn, isSuperAdmin, onEdit, onDelete, onPin, isP
   return (
     <div
       className={cn(
-        "absolute -top-8 flex items-center gap-0.5 rounded-lg border bg-popover px-1 py-0.5 shadow-md",
-        "opacity-0 group-hover/bubble:opacity-100 transition-opacity duration-100 pointer-events-none group-hover/bubble:pointer-events-auto z-10",
+        "absolute -top-8 flex items-center gap-0.5 rounded-lg border bg-popover px-1 py-0.5 shadow-md z-10",
+        // Show instantly on hover, hide with 400ms delay so user can move cursor to menu
+        "opacity-0 pointer-events-none",
+        "group-hover/bubble:opacity-100 group-hover/bubble:pointer-events-auto",
+        "transition-opacity duration-150",
+        "group-hover/bubble:[transition-delay:0ms] [transition-delay:400ms]",
         isOwn ? "right-0" : "left-0"
       )}
     >
@@ -178,14 +182,28 @@ export default function ChatBox({
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const rawMessages = data?.succeeded ? (data.result ?? []) : []
-  // Pinned first, then chronological
-  const messages = [...rawMessages].sort((a, b) => {
-    if (a.isPinned !== b.isPinned) return a.isPinned ? -1 : 1
-    return new Date(a.sentAt).getTime() - new Date(b.sentAt).getTime()
-  })
+  // Keep chronological order — pinned messages stay in place (like Telegram)
+  const messages = [...rawMessages].sort(
+    (a, b) => new Date(a.sentAt).getTime() - new Date(b.sentAt).getTime()
+  )
   const groups = groupMessages(messages, currentUserId)
 
-  const pinnedCount = rawMessages.filter((m) => m.isPinned).length
+  const pinnedMessages = rawMessages.filter((m) => m.isPinned)
+  const pinnedCount = pinnedMessages.length
+
+  // Ref map for scrolling to a pinned message by id
+  const messageRefs = useRef<Map<string, HTMLDivElement>>(new Map())
+
+  // Cycle through pinned messages on banner click (like Telegram)
+  const pinnedIndexRef = useRef(0)
+  const scrollToPinned = () => {
+    if (pinnedMessages.length === 0) return
+    pinnedIndexRef.current = (pinnedIndexRef.current) % pinnedMessages.length
+    const target = pinnedMessages[pinnedIndexRef.current]
+    pinnedIndexRef.current = (pinnedIndexRef.current + 1) % pinnedMessages.length
+    const el = messageRefs.current.get(target.id)
+    el?.scrollIntoView({ behavior: "smooth", block: "center" })
+  }
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" })
@@ -317,16 +335,20 @@ export default function ChatBox({
 
   return (
     <div className={cn("flex flex-col bg-background overflow-hidden", className)}>
-      {/* Pinned banner */}
-      {pinnedCount > 0 && (
-        <div className="flex items-center gap-2 border-b bg-amber-50/60 px-4 py-1.5 text-xs text-amber-700 dark:bg-amber-900/20 dark:text-amber-400">
-          <Pin className="h-3 w-3 shrink-0" />
-          <span>{pinnedCount} ta mahkamlangan xabar</span>
-        </div>
-      )}
-
       {/* Messages area */}
       <div className="flex-1 min-h-0 overflow-y-auto px-4 py-3 space-y-3">
+        {/* Pinned banner — sticky inside scroll area, clicks scroll to the pinned message */}
+        {pinnedCount > 0 && (
+          <button
+            type="button"
+            onClick={scrollToPinned}
+            className="sticky top-0 z-10 flex w-full items-center gap-2 rounded-lg border border-amber-200/60 bg-amber-50/90 px-3 py-1.5 text-xs text-amber-700 dark:border-amber-700/40 dark:bg-amber-900/30 dark:text-amber-400 hover:bg-amber-100/90 dark:hover:bg-amber-900/50 transition-colors text-left backdrop-blur-sm"
+          >
+            <Pin className="h-3 w-3 shrink-0" />
+            <span className="flex-1">{pinnedCount} ta mahkamlangan xabar</span>
+            <span className="text-[10px] opacity-60">↑ o'tish</span>
+          </button>
+        )}
         {isLoading && <ChatSkeleton />}
         {!isLoading && isError && (
           <ErrorState
@@ -361,7 +383,14 @@ export default function ChatBox({
               const parsed = parseFile(message.content)
 
               return (
-                <div key={message.id} className="relative group/bubble max-w-[70%]">
+                <div
+                  key={message.id}
+                  ref={(el) => {
+                    if (el) messageRefs.current.set(message.id, el)
+                    else messageRefs.current.delete(message.id)
+                  }}
+                  className="relative group/bubble max-w-[70%]"
+                >
                   <BubbleMenu
                     message={message}
                     isOwn={group.isOwn}
