@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react"
 import { useParams, useNavigate } from "react-router-dom"
 import { ArrowLeft } from "lucide-react"
 
@@ -22,6 +23,7 @@ import {
   useEditMessage,
   useDeleteMessage,
   useTogglePinMessage,
+  useMarkChatAsRead,
   chatKeys,
 } from "@/api/chat"
 
@@ -32,12 +34,27 @@ export default function ProjectDetailPage() {
   const projectQuery = useProject(id)
   const project = projectQuery.data?.succeeded ? projectQuery.data.result : null
 
-  // Hooks called unconditionally at the top level — never inside callbacks or conditions
+  // Hooklar chat uchun
   const messagesQuery = useProjectMessages(id)
   const sendMutation = useSendProjectMessage(id)
   const editMutation = useEditMessage(chatKeys.project(id))
   const deleteMutation = useDeleteMessage(chatKeys.project(id))
   const pinMutation = useTogglePinMessage(chatKeys.project(id))
+  const markAsReadMutation = useMarkChatAsRead()
+
+  // yangi xabarlar kelganda va biz uni ko'rib turganimizda chatni o'qilgan deb belgilash
+  const messages = messagesQuery.data?.succeeded ? messagesQuery.data.result : undefined
+  const lastMessageId = messages?.[messages.length - 1]?.id
+  const chatId = messages?.[0]?.chatId
+  const lastMarkedRef = useRef<string | undefined>(undefined)
+
+  useEffect(() => {
+    if (!chatId || !lastMessageId) return
+    if (lastMarkedRef.current === lastMessageId) return
+    lastMarkedRef.current = lastMessageId
+    markAsReadMutation.mutate(chatId)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chatId, lastMessageId])
 
   return (
     <div className="space-y-6">
