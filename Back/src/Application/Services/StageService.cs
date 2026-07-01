@@ -56,19 +56,36 @@ public class StageService : IStageService
             return ApiResult<StageDto>.Failure(["Bosqich nomi bo'sh bo'lishi mumkin emas."], 400);
         }
 
-        var stage = await _context.ProjectStages.FirstOrDefaultAsync(s => s.Id == id);
+        var stage = await _context.ProjectStages
+            .Include(s => s.Events)
+            .FirstOrDefaultAsync(s => s.Id == id);
 
         if (stage is null)
         {
             return ApiResult<StageDto>.Failure(["Bosqich topilmadi."], 404);
         }
 
+        var oldProgress = stage.Progress;
+        var newProgress = Math.Clamp(request.Progress, 0, 100);
+
         stage.Name = request.Name;
         stage.Description = request.Description;
         stage.Order = request.Order;
-        stage.Progress = Math.Clamp(request.Progress, 0, 100);
+        stage.Progress = newProgress;
         stage.Owner = request.Owner;
         stage.UpdatedAt = DateTime.UtcNow;
+
+        if (oldProgress != newProgress)
+        {
+            _context.StageEvents.Add(new StageEvent
+            {
+                Id = Guid.NewGuid(),
+                StageId = stage.Id,
+                Date = DateTime.UtcNow,
+                Text = $"Taraqqiyot yangilandi: {oldProgress}% → {newProgress}%",
+                CreatedAt = DateTime.UtcNow
+            });
+        }
 
         await _context.SaveChangesAsync();
 
@@ -93,12 +110,16 @@ public class StageService : IStageService
 
     public async Task<ApiResult<StageDto>> UpdateStatusAsync(Guid id, UpdateStageStatusRequest request)
     {
-        var stage = await _context.ProjectStages.FirstOrDefaultAsync(s => s.Id == id);
+        var stage = await _context.ProjectStages
+            .Include(s => s.Events)
+            .FirstOrDefaultAsync(s => s.Id == id);
 
         if (stage is null)
         {
             return ApiResult<StageDto>.Failure(["Bosqich topilmadi."], 404);
         }
+
+        var oldStatus = stage.Status;
 
         stage.Status = request.Status;
 
@@ -125,10 +146,31 @@ public class StageService : IStageService
 
         stage.UpdatedAt = DateTime.UtcNow;
 
+        if (oldStatus != request.Status)
+        {
+            _context.StageEvents.Add(new StageEvent
+            {
+                Id = Guid.NewGuid(),
+                StageId = stage.Id,
+                Date = DateTime.UtcNow,
+                Text = $"Holat o'zgartirildi: {StatusLabel(oldStatus)} → {StatusLabel(request.Status)}",
+                CreatedAt = DateTime.UtcNow
+            });
+        }
+
         await _context.SaveChangesAsync();
 
         return ApiResult<StageDto>.Success(MapToDto(stage));
     }
+
+    private static string StatusLabel(StageStatus status) => status switch
+    {
+        StageStatus.NotStarted => "Rejalashtirilgan",
+        StageStatus.InProgress => "Jarayonda",
+        StageStatus.Completed  => "Tugallangan",
+        StageStatus.Blocked    => "To'xtatilgan",
+        _                      => status.ToString()
+    };
 
     public async Task<ApiResult<List<StageDto>>> GetByProjectAsync(Guid projectId)
     {

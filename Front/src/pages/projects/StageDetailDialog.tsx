@@ -1,6 +1,6 @@
 import { useState } from "react"
 import { toast } from "sonner"
-import { ChevronDown, Check } from "lucide-react"
+import { ChevronDown, Check, Zap } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import {
@@ -24,6 +24,19 @@ import type { StageDto, StageStatus } from "@/types/stage"
 import { useAddStageEvent, useUpdateStageStatus } from "@/api/stages"
 import { useAuthStore } from "@/store/authStore"
 
+function formatEventDate(value: string | null): string {
+  if (!value) return "—"
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return "—"
+  return date.toLocaleString("uz-UZ", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  })
+}
+
 function formatDate(value: string | null): string {
   if (!value) return "—"
   const date = new Date(value)
@@ -41,6 +54,12 @@ const STATUS_OPTIONS: { value: StageStatus; label: string }[] = [
   { value: "Completed", label: "Tugallangan" },
   { value: "Blocked", label: "To'xtatilgan" },
 ]
+
+const AUTO_LOG_PREFIXES = ["Holat o'zgartirildi:", "Taraqqiyot yangilandi:"]
+
+function isAutoLog(text: string): boolean {
+  return AUTO_LOG_PREFIXES.some((p) => text.startsWith(p))
+}
 
 interface StageDetailDialogProps {
   open: boolean
@@ -158,6 +177,28 @@ export default function StageDetailDialog({
             </p>
           </div>
 
+          {/* Boshlanish / Tugash sanalari */}
+          {(stage.startDate || stage.endDate) && (
+            <div className="flex gap-6 text-sm">
+              {stage.startDate && (
+                <div className="space-y-0.5">
+                  <p className="font-medium">Boshlanish</p>
+                  <p className="text-muted-foreground tabular-nums">
+                    {formatDate(stage.startDate)}
+                  </p>
+                </div>
+              )}
+              {stage.endDate && (
+                <div className="space-y-0.5">
+                  <p className="font-medium">Tugash</p>
+                  <p className="text-muted-foreground tabular-nums">
+                    {formatDate(stage.endDate)}
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* To'liq tavsif */}
           {stage.description && (
             <div className="space-y-1">
@@ -167,29 +208,6 @@ export default function StageDetailDialog({
               </p>
             </div>
           )}
-
-          {/* Voqealar tarixi */}
-          <div className="space-y-3">
-            <p className="text-sm font-medium">Voqealar tarixi</p>
-
-            {events.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                Hozircha voqealar yo'q
-              </p>
-            ) : (
-              <ol className="space-y-4 border-l border-border pl-5">
-                {events.map((event) => (
-                  <li key={event.id} className="relative">
-                    <span className="absolute -left-[1.4375rem] top-1 h-2.5 w-2.5 rounded-full border-2 border-background bg-muted-foreground/40" />
-                    <p className="text-xs text-muted-foreground tabular-nums">
-                      {formatDate(event.date)}
-                    </p>
-                    <p className="whitespace-pre-line text-sm">{event.text}</p>
-                  </li>
-                ))}
-              </ol>
-            )}
-          </div>
 
           {/* Voqea qo'shish — faqat SuperAdmin */}
           {isSuperAdmin && (
@@ -231,10 +249,42 @@ export default function StageDetailDialog({
               </div>
             </form>
           )}
+
+          {/* Voqealar tarixi — vertical timeline */}
+          <div className="space-y-3">
+            <p className="text-sm font-medium">Voqealar tarixi</p>
+
+            {events.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                Hozircha voqealar yo'q
+              </p>
+            ) : (
+              <ol className="relative border-l border-border">
+                {events.map((event) => {
+                  const auto = isAutoLog(event.text)
+                  return (
+                    <li key={event.id} className="relative pb-5 pl-6 last:pb-0">
+                      <span
+                        className={`absolute -left-[5px] top-[6px] h-2.5 w-2.5 rounded-full border-2 border-background ${
+                          auto ? "bg-primary/60" : "bg-muted-foreground/40"
+                        }`}
+                      />
+                      <p className="flex items-center gap-1.5 text-xs tabular-nums text-muted-foreground">
+                        {formatEventDate(event.date)}
+                        {auto && <Zap className="h-3 w-3 shrink-0 text-primary/70" />}
+                      </p>
+                      <p className="mt-0.5 whitespace-pre-line text-sm">
+                        {event.text}
+                      </p>
+                    </li>
+                  )
+                })}
+              </ol>
+            )}
+          </div>
         </div>
 
         <DialogFooter className="flex-row items-center justify-between gap-2 sm:justify-between">
-          {/* Bottom-left: status change dropdown (SuperAdmin only) */}
           {isSuperAdmin ? (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
