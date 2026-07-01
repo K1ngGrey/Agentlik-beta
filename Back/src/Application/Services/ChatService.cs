@@ -11,10 +11,12 @@ namespace Application.Services;
 public class ChatService : IChatService
 {
     private readonly DatabaseContext _context;
+    private readonly INotificationService _notifications;
 
-    public ChatService(DatabaseContext context)
+    public ChatService(DatabaseContext context, INotificationService notifications)
     {
         _context = context;
+        _notifications = notifications;
     }
 
     public async Task<ApiResult<ChatMessageDto>> SendProjectMessageAsync(Guid projectId, Guid senderId, string content)
@@ -28,7 +30,7 @@ public class ChatService : IChatService
         if (chat is null)
             return ApiResult<ChatMessageDto>.Failure(["Loyiha chati topilmadi."], 404);
 
-        return await SaveMessageAsync(chat.Id, senderId, content);
+        return await SaveMessageAsync(chat.Id, senderId, content, projectId);
     }
 
     public async Task<ApiResult<ChatMessageDto>> SendGlobalMessageAsync(Guid senderId, string content)
@@ -37,7 +39,7 @@ public class ChatService : IChatService
             return ApiResult<ChatMessageDto>.Failure(["Xabar bo'sh bo'lishi mumkin emas."], 400);
 
         var chat = await GetOrCreateGlobalChatAsync();
-        return await SaveMessageAsync(chat.Id, senderId, content);
+        return await SaveMessageAsync(chat.Id, senderId, content, null);
     }
 
     public async Task<ApiResult<List<ChatMessageDto>>> GetProjectMessagesAsync(Guid projectId)
@@ -118,7 +120,7 @@ public class ChatService : IChatService
         return ApiResult<ChatMessageDto>.Success(ToDto(message));
     }
 
-    private async Task<ApiResult<ChatMessageDto>> SaveMessageAsync(Guid chatId, Guid senderId, string content)
+    private async Task<ApiResult<ChatMessageDto>> SaveMessageAsync(Guid chatId, Guid senderId, string content, Guid? projectId)
     {
         var sender = await _context.Users.FirstOrDefaultAsync(u => u.Id == senderId);
 
@@ -138,6 +140,27 @@ public class ChatService : IChatService
 
         _context.ChatMessages.Add(message);
         await _context.SaveChangesAsync();
+
+        // Notify project chat participants (excluding sender).
+        if (projectId.HasValue)
+        {
+            var memberIds = await _context.ProjectMembers
+                .Where(m => m.ProjectId == projectId.Value && m.UserId != senderId)
+                .Select(m => m.UserId)
+                .ToListAsync();
+
+            var preview = content.Length > 80 ? content[..80] + "…" : content;
+
+            foreach (var memberId in memberIds)
+            {
+                await _notifications.CreateAsync(
+                    memberId,
+                    NotificationType.NewChatMessage,
+                    $"{sender.FullName} xabar yozdi",
+                    preview,
+                    projectId);
+            }
+        }
 
         return ApiResult<ChatMessageDto>.Success(ToDto(message), 201);
     }

@@ -25,6 +25,8 @@ public class DatabaseContext : DbContext
 
     public DbSet<ChatReadReceipt> ChatReadReceipts => Set<ChatReadReceipt>();
 
+    public DbSet<Notification> Notifications => Set<Notification>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);

@@ -11,10 +11,12 @@ namespace Application.Services;
 public class StageService : IStageService
 {
     private readonly DatabaseContext _context;
+    private readonly INotificationService _notifications;
 
-    public StageService(DatabaseContext context)
+    public StageService(DatabaseContext context, INotificationService notifications)
     {
         _context = context;
+        _notifications = notifications;
     }
 
     public async Task<ApiResult<StageDto>> CreateAsync(Guid projectId, CreateStageRequest request)
@@ -67,12 +69,14 @@ public class StageService : IStageService
 
         var oldProgress = stage.Progress;
         var newProgress = Math.Clamp(request.Progress, 0, 100);
+        var oldOwner = stage.Owner;
+        var newOwner = request.Owner?.Trim();
 
         stage.Name = request.Name;
         stage.Description = request.Description;
         stage.Order = request.Order;
         stage.Progress = newProgress;
-        stage.Owner = request.Owner;
+        stage.Owner = newOwner;
         stage.UpdatedAt = DateTime.UtcNow;
 
         if (oldProgress != newProgress)
@@ -88,6 +92,24 @@ public class StageService : IStageService
         }
 
         await _context.SaveChangesAsync();
+
+        // Notify newly assigned owner (if owner changed to a non-null new value).
+        if (!string.IsNullOrWhiteSpace(newOwner) && newOwner != oldOwner)
+        {
+            var ownerUser = await _context.Users
+                .FirstOrDefaultAsync(u => u.FullName == newOwner || u.Login == newOwner);
+
+            if (ownerUser is not null)
+            {
+                await _notifications.CreateAsync(
+                    ownerUser.Id,
+                    NotificationType.StageAssigned,
+                    "Bosqich tayinlandi",
+                    $"Siz \"{stage.Name}\" bosqichiga mas'ul etib tayinlandingiz.",
+                    stage.ProjectId,
+                    stage.Id);
+            }
+        }
 
         return ApiResult<StageDto>.Success(MapToDto(stage));
     }
@@ -159,6 +181,24 @@ public class StageService : IStageService
         }
 
         await _context.SaveChangesAsync();
+
+        // Notify the stage owner about the status change.
+        if (oldStatus != request.Status && !string.IsNullOrWhiteSpace(stage.Owner))
+        {
+            var ownerUser = await _context.Users
+                .FirstOrDefaultAsync(u => u.FullName == stage.Owner || u.Login == stage.Owner);
+
+            if (ownerUser is not null)
+            {
+                await _notifications.CreateAsync(
+                    ownerUser.Id,
+                    NotificationType.StageStatusChanged,
+                    "Bosqich holati o'zgardi",
+                    $"\"{stage.Name}\" bosqichi holati: {StatusLabel(oldStatus)} → {StatusLabel(request.Status)}",
+                    stage.ProjectId,
+                    stage.Id);
+            }
+        }
 
         return ApiResult<StageDto>.Success(MapToDto(stage));
     }

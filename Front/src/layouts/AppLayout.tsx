@@ -10,6 +10,7 @@ import { useLogout } from "@/api/auth"
 import { useUnreadCounts } from "@/api/chat"
 import { Button } from "@/components/ui/button"
 import ThemeToggle from "@/components/ThemeToggle"
+import NotificationBell from "@/components/NotificationBell"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -189,6 +190,7 @@ export default function AppLayout() {
 
           <div className="flex items-center gap-1.5">
             <ThemeToggle />
+            <NotificationBell />
             {user && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>

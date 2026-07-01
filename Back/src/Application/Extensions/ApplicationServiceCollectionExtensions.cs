@@ -20,6 +20,7 @@ public static class ApplicationServiceCollectionExtensions
         services.AddScoped<IStageService, StageService>();
         services.AddScoped<IChatService, ChatService>();
         services.AddScoped<IProfileService, ProfileService>();
+        services.AddScoped<INotificationService, NotificationService>();
 
         return services;
     }
