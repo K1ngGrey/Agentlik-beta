@@ -89,7 +89,7 @@ function parseFile(msg: string) {
   return null
 }
 
-// Bubble context menu (appears on hover)
+// bubble context menu edit, pin va delete tugmalari uchun
 interface BubbleMenuProps {
   message: ChatMessageDto
   isOwn: boolean
@@ -111,7 +111,7 @@ function BubbleMenu({ message, isOwn, isSuperAdmin, onEdit, onDelete, onPin, isP
     <div
       className={cn(
         "absolute -top-8 flex items-center gap-0.5 rounded-lg border bg-popover px-1 py-0.5 shadow-md z-10",
-        // Show instantly on hover, hide with 400ms delay so user can move cursor to menu
+        // hover holatida ko'rsatish, aks holda yashirish
         "opacity-0 pointer-events-none",
         "group-hover/bubble:opacity-100 group-hover/bubble:pointer-events-auto",
         "transition-opacity duration-150",
