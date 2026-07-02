@@ -167,7 +167,11 @@ public class ChatService : IChatService
 
     private async Task<List<ChatMessageDto>> GetMessagesAsync(Guid chatId)
     {
-        return await _context.ChatMessages
+        var chat = await _context.Chats.FirstOrDefaultAsync(c => c.Id == chatId);
+        if (chat is null) return [];
+
+        // Get all messages for this chat
+        var messages = await _context.ChatMessages
             .Where(m => m.ChatId == chatId)
             .OrderBy(m => m.SentAt)
             .Include(m => m.Sender)
@@ -184,9 +188,45 @@ public class ChatService : IChatService
                 EditedAt = m.EditedAt,
             })
             .ToListAsync();
+
+        if (messages.Count == 0) return messages;
+
+        // Get all read receipts for this chat (userId -> lastReadAt)
+        var receipts = await _context.ChatReadReceipts
+            .Where(r => r.ChatId == chatId)
+            .ToDictionaryAsync(r => r.UserId, r => r.LastReadAt);
+
+        // Determine chat participants
+        List<Guid> participantIds;
+        if (chat.Type == ChatType.Project && chat.ProjectId.HasValue)
+        {
+            participantIds = await _context.ProjectMembers
+                .Where(m => m.ProjectId == chat.ProjectId.Value)
+                .Select(m => m.UserId)
+                .ToListAsync();
+        }
+        else
+        {
+            // Global chat - all users
+            participantIds = await _context.Users
+                .Select(u => u.Id)
+                .ToListAsync();
+        }
+
+        var totalParticipants = participantIds.Count;
+
+        // Compute read status for each message
+        foreach (var msg in messages)
+        {
+            msg.TotalParticipants = totalParticipants;
+            msg.ReadByCount = participantIds
+                .Count(pid => pid != msg.SenderId && receipts.TryGetValue(pid, out var lastRead) && lastRead >= msg.SentAt);
+        }
+
+        return messages;
     }
 
-    private static ChatMessageDto ToDto(ChatMessage m) => new()
+    private ChatMessageDto ToDto(ChatMessage m) => new()
     {
         Id = m.Id,
         ChatId = m.ChatId,
@@ -197,6 +237,10 @@ public class ChatService : IChatService
         IsPinned = m.IsPinned,
         IsEdited = m.IsEdited,
         EditedAt = m.EditedAt,
+        // For single-message operations (send/edit), message was just created/modified
+        // so no one else has read it yet (ReadByCount = 0)
+        ReadByCount = 0,
+        TotalParticipants = 0, // Frontend will handle gracefully
     };
 
     private async Task<Chat> GetOrCreateGlobalChatAsync()

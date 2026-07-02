@@ -8,6 +8,8 @@ export interface ChatMessageDto {
   isPinned: boolean
   isEdited: boolean
   editedAt: string | null
+  readByCount: number
+  totalParticipants: number
 }
 
 export interface SendMessageRequest {

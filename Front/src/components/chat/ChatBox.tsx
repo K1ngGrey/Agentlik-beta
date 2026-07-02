@@ -12,6 +12,7 @@ import {
   Pencil,
   Trash2,
   Check,
+  CheckCheck,
 } from "lucide-react"
 import { toast } from "sonner"
 
@@ -154,6 +155,41 @@ function BubbleMenu({ message, isOwn, isSuperAdmin, onEdit, onDelete, onPin, isP
       )}
     </div>
   )
+}
+
+interface ReadStatusIndicatorProps {
+  readByCount: number
+  totalParticipants: number
+}
+
+function ReadStatusIndicator({ readByCount, totalParticipants }: ReadStatusIndicatorProps) {
+  // totalParticipants includes sender, so readers = totalParticipants - 1
+  const totalReaders = Math.max(0, totalParticipants - 1)
+
+  // No indicators needed if:
+  // - No other participants (totalReaders === 0)
+  // - totalParticipants is 0 (not set / legacy)
+  if (totalReaders === 0 || totalParticipants === 0) return null
+
+  const allRead = readByCount >= totalReaders
+  const someRead = readByCount > 0
+
+  // One gray check = sent but not yet read by anyone
+  // Two gray checks = read by at least one person but not all
+  // Two blue checks = read by everyone
+
+  if (!someRead) {
+    // Single gray check - sent, not yet read
+    return <Check className="h-3 w-3" />
+  }
+
+  if (!allRead) {
+    // Two gray checks - read by some but not all
+    return <CheckCheck className="h-3 w-3" />
+  }
+
+  // Two blue checks - read by all
+  return <CheckCheck className="h-3 w-3 text-sky-400" />
 }
 
 export default function ChatBox({
@@ -488,6 +524,13 @@ export default function ChatBox({
                         <span className="text-[10px] leading-none tabular-nums">
                           {formatTime(message.sentAt)}
                         </span>
+                        {/* Read status indicators for own messages */}
+                        {group.isOwn && (
+                          <ReadStatusIndicator
+                            readByCount={message.readByCount}
+                            totalParticipants={message.totalParticipants}
+                          />
+                        )}
                       </div>
                     </div>
                   )}
